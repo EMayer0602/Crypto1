@@ -29,7 +29,7 @@ from datetime import datetime, timedelta
 TRADING_MODE = "paper_trading"
 API_KEY = ""
 capital_plots = {}
-CSV_PATH = "C:\\Users\\Edgar.000\\Documents\\____Trading strategies\\Crypto_trading"
+CSV_PATH = "C:\\Users\\Edgar.000\\Documents\\____Trading strategies\\Crypto_trading1"
 # safe_loader.py
 
 def safe_loader(symbol, csv_path, refresh=True):
@@ -62,57 +62,134 @@ def safe_loader(symbol, csv_path, refresh=True):
 
     return df_combined
 
-import yfinance as yf
-import pandas as pd
-from datetime import datetime, timedelta
-import os
+def load_crypto_data_yf(ticker: str, data_dir: str = "Crypto_trading1") -> pd.DataFrame:
+    import os
+    import pandas as pd
+    import yfinance as yf
 
-def load_crypto_data_yf(symbol, csv_path, days=365, interval="1d", refresh=True, reset_index=False):
-    filename = os.path.join(csv_path, f"{symbol}.csv")
+    file_path = os.path.join(data_dir, f"{ticker}.csv")
 
-    # 📂 Lokale Datei verwenden, wenn vorhanden
-    if os.path.exists(filename) and not refresh:
+    if not os.path.exists(file_path):
+        print(f"⚠️ Datei für {ticker} nicht gefunden. Hole komplette Historie von Yahoo...")
+        df = yf.download(ticker, period="max", interval="1d")
+    else:
         try:
-            df_local = pd.read_csv(filename, parse_dates=["Date"])
-            print(f"📁 Lokale Datei geladen ({len(df_local)} Zeilen)")
-            return df_local
+            df = pd.read_csv(file_path)
         except Exception as e:
-            print(f"⚠️ Fehler beim Laden: {e}")
-            return None
+            print(f"Fehler beim Einlesen von {file_path}: {e}")
+            return pd.DataFrame()
 
-    # 📥 Neue Daten laden
-    end_date = datetime.today()
-    start_date = end_date - timedelta(days=days)
-    print(f"⬇️ Lade {symbol} von {start_date.date()} bis {end_date.date()}")
+        # Index-Spalte entfernen, wenn vorhanden
+        if df.columns[0].lower() in ["unnamed: 0", "index"]:
+            df = df.drop(columns=[df.columns[0]])
 
-    df = yf.download(
-        symbol,
-        start=start_date.strftime('%Y-%m-%d'),
-        end=end_date.strftime('%Y-%m-%d'),
-        interval=interval,
-        auto_adjust=True,
-        progress=False
-    )
+        # Header reparieren falls Spalten fehlen
+        required_cols = ["Date", "Open", "High", "Low", "Close", "Adj Close", "Volume"]
+        if len(df.columns) < len(required_cols):
+            print(f"🔧 Repariere Header in {ticker}.csv")
+            df.columns = required_cols[:len(df.columns)]
 
-    if df.empty:
-        print(f"⚠️ Keine Daten für {symbol}")
-        return None
+        # Date-Spalte als Zeitindex setzen
+        if "Date" in df.columns:
+            df["Date"] = pd.to_datetime(df["Date"])
+            df.set_index("Date", inplace=True)
+        df = df.sort_index()
 
-    df["Price"] = df["Close"]
-    df.index.name = "Date"
-    df.columns.name = None
+        # Falls heute fehlt: Daten ergänzen
+        today = pd.Timestamp.now().floor("D")
+        if today not in df.index:
+            print(f"➕ Hole heutigen Kurs für {ticker} von Yahoo Finance")
+            today_data = yf.download(ticker, start=today, interval="1m")
+            if not today_data.empty:
+                latest = today_data.iloc[-1]
+                new_row = pd.DataFrame([{
+                    "Open": latest["Open"],
+                    "High": latest["High"],
+                    "Low": latest["Low"],
+                    "Close": latest["Close"],
+                    "Adj Close": latest.get("Adj Close", latest["Close"]),
+                    "Volume": latest["Volume"]
+                }], index=pd.to_datetime([today]))
+                df = pd.concat([df, new_row])
+                df = df.sort_index()
+            else:
+                print(f"⚠️ Keine Minuten-Daten für heute verfügbar für {ticker}")
 
-    df_out = df[["Price", "Open", "High", "Low", "Close", "Volume"]].copy()
+    return df
 
-    if reset_index:
-        df_out.reset_index(inplace=True)
+def load_and_update_daily_crypto(minute_df, symbol, daily_path):
+    print(f"[{symbol}] 🔄 Aktualisiere Tagesdaten aus Minutendaten...")
 
-    # 📦 Speichern mit oder ohne Index
-    df_out.to_csv(filename, index=not reset_index)
-    print(f"✅ CSV gespeichert: {filename} ({len(df_out)} Zeilen)")
+    # Prüfe, ob Tagesdatei existiert
+    if not os.path.exists(daily_path):
+        print(f"[{symbol}] ⚠️ Tagesdatei nicht gefunden. Erstelle neue: {daily_path}")
+        daily_df = pd.DataFrame()
+    else:
+        daily_df = pd.read_csv(daily_path, parse_dates=["date"])
 
-    return df_out
+    # Berechne neue Tagesdaten aus Minutendaten
+    minute_df["date"] = pd.to_datetime(minute_df["datetime"]).dt.date
+    grouped = minute_df.groupby("date")
+    new_daily = pd.DataFrame({
+        "date": grouped["datetime"].first().dt.date,
+        "open": grouped["open"].first(),
+        "high": grouped["high"].max(),
+        "low": grouped["low"].min(),
+        "close": grouped["close"].last(),
+        "volume": grouped["volume"].sum()
+    })
 
+    # Kombiniere bestehende mit neuen Daten
+    combined = pd.concat([daily_df, new_daily]).drop_duplicates("date", keep="last")
+    combined = combined.sort_values("date").reset_index(drop=True)
+
+    # Speichere aktualisierte Datei
+    combined.to_csv(daily_path, index=False)
+    return combined
+
+
+def safe_parse_date(date_str):
+    """Versucht, ein Datum im erwarteten Format zu parsen. Fehler werden zu NaT."""
+    try:
+        return pd.to_datetime(date_str, format="%Y-%m-%d %H:%M:%S")
+    except:
+        return pd.NaT
+
+def update_daily_crypto_with_today1(minute_df, symbol, daily_path):
+    """
+    Aggregiert die Minutendaten zu Tagesdaten,
+    entfernt doppelte Headerstufen und sichert das Datum gegen Parsingfehler.
+    """
+    if minute_df is None or minute_df.empty:
+        print(f"[{symbol}] ❌ Keine gültigen Minutendaten vorhanden.")
+        return
+
+    # 🧽 Schritt 1: Datum bereinigen
+    minute_df["Date"] = minute_df["Date"].apply(safe_parse_date)
+    minute_df["Date"] = pd.to_datetime(minute_df["Date"]).dt.date
+
+    # 🔁 Schritt 2: Aggregation auf Tagesbasis
+    daily_df_new = minute_df.groupby("Date").agg({
+        "price": ["first", "max", "min", "last"],
+        "volume": "sum"
+    })
+
+    # 🧹 Schritt 3: Header flatten
+    daily_df_new.columns = ["Open", "High", "Low", "Close", "Volume"]
+    daily_df_new.index = pd.to_datetime(daily_df_new.index)
+
+    # 📁 Schritt 4: Vorhandene Datei laden (falls vorhanden)
+    if os.path.exists(daily_path):
+        daily_df_existing = pd.read_csv(daily_path, parse_dates=["Date"], index_col="Date")
+        daily_df_existing.index = pd.to_datetime(daily_df_existing.index)
+        daily_df = pd.concat([daily_df_existing, daily_df_new])
+        daily_df = daily_df[~daily_df.index.duplicated(keep="last")]  # Duplikate entfernen
+    else:
+        daily_df = daily_df_new
+
+    # 💾 Schritt 5: Speichern mit sauberem Header
+    daily_df.to_csv(daily_path, index=True)
+    print(f"[{symbol}] ✅ Tagesdaten erfolgreich aktualisiert.")
 
 
 def compute_equity_curve(df, trades, start_capital, long=True):
@@ -230,109 +307,99 @@ def backtest_single_ticker(ticker, cfg, days=365):
     return trades, ext_signals, capital, eq_curve, bh_curve, p, tw
 
 def run_crypto_backtests():
-
-    report_data = {}
-    today = pd.Timestamp.now().date()
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    results = []
 
     for ticker, cfg in crypto_tickers.items():
-        if not cfg.get("long", False):
-            print(f"[SKIP] {ticker} – Long deaktiviert")
+        symbol = cfg["symbol"]
+        csv_path = f"C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading1/{symbol}_cleaned.csv"
+
+        # 📥 CSV laden
+        try:
+            df = pd.read_csv(csv_path)
+        except FileNotFoundError:
+            print(f"[{ticker}] ❌ Datei fehlt: {csv_path}")
             continue
 
-        print(f"\n🚀 Starte Backtest für {ticker} | trade_on = {cfg.get('trade_on')}")
-
-      #  df = load_crypto_data_yf(cfg["symbol"], days=365)
-        df = load_crypto_data_yf(cfg["symbol"], csv_path=CSV_PATH, days=365, refresh=True)
-        df = clean_crypto_csv("C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading/BTC-EUR.csv")
-        save_crypto_csv(df, "C:/Users/Edgar.000/Documents/Cleaned_BTC-EUR.csv", reset_index=True)
-
-        if df is None or df.empty:
-            print(f"[{ticker}] ⚠️ Keine Marktdaten verfügbar.")
+        # Spalten standardisieren
+        df.columns = [str(c).strip().capitalize() for c in df.columns]
+        if "Close" not in df.columns:
+            print(f"[{ticker}] ⚠️ 'Close'-Spalte fehlt → übersprungen")
             continue
 
-        # Optimierung & Zeitfenster
-        p, tw = berechne_best_p_tw_long(df, cfg, begin=backtesting_begin, end=backtesting_end, verbose=True, ticker=ticker)
-        n = len(df)
-        start = int(n * backtesting_begin / 100)
-        end = int(n * backtesting_end / 100)
-        df_opt = df.iloc[start:end].copy()
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df = df.dropna(subset=["Date", "Close"])
 
-        # Signal & Extended
-        support, resistance = calculate_support_resistance(df_opt, p, tw)
-        ext_signals = assign_long_signals_extended(support, resistance, df_opt, tw, interval="1d")
-        ext_signals = update_level_close_long(ext_signals, df_opt)
+        # Heute ergänzen, falls nicht vorhanden
+        if today_str not in df["Date"].dt.strftime("%Y-%m-%d").values:
+            df1m = yf.download(symbol, interval="1m", period="1d", progress=False, auto_adjust=True)
 
-        last_date = df_opt.index[-1]
-        last_price = df_opt["Close"].iloc[-1]
+            if df1m is not None and not df1m.empty:
+                df1m.columns = [str(c).strip().capitalize() for c in df1m.columns]
+                required_cols = ["Open", "High", "Low", "Close"]
 
-        # Simulation
-        capital, trades = simulate_trades_compound_extended(
-            ext_signals, df_opt, cfg,
-            commission_rate=COMMISSION_RATE,
-            min_commission=MIN_COMMISSION,
-            round_factor=cfg.get("order_round_factor", ORDER_ROUND_FACTOR),
-            artificial_close_price=last_price,
-            artificial_close_date=last_date,
-            direction="long"
-        )
+                if all(col in df1m.columns for col in required_cols):
+                    df1m = df1m.dropna(subset=required_cols)
 
-        eq_curve = compute_equity_curve(df_opt, trades, cfg["initialCapitalLong"], long=True)
-        bh_curve = cfg["initialCapitalLong"] * (df_opt["Close"] / df_opt["Close"].iloc[0])
-        capital = eq_curve[-1]  # falls du Endwert brauchst
-        roi = f"{(capital / cfg['initialCapitalLong'] - 1) * 100:.2f} %"
-        
-        # 📈 Chart erzeugen + anzeigen + Screenshot
-        chart_img_base64 = plotly_combined_chart_and_equity(
-            df_opt, ext_signals, support, resistance,
-            eq_curve, bh_curve, ticker
-        )
+                    if not df1m.empty:
+                        new_row = {
+                            "Date": today_str,
+                            "Open": df1m["Open"].iloc[0],
+                            "High": df1m["High"].max(),
+                            "Low": df1m["Low"].min(),
+                            "Close": df1m["Close"].iloc[-1],
+                            "Volume": df1m["Volume"].sum() if "Volume" in df1m.columns else None
+                        }
+                        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                        print(f"[{ticker}] ➕ Tageskurs ergänzt: {new_row['Close']:.2f} EUR")
+                    else:
+                        print(f"[{ticker}] ⚠️ Minuten-Daten leer nach dropna")
+                else:
+                    missing = set(required_cols) - set(df1m.columns)
+                    print(f"[{ticker}] ⚠️ Minuten-Daten unvollständig: {missing}")
+            else:
+                print(f"[{ticker}] ⚠️ Keine Minuten-Daten verfügbar")
 
+        # ROI berechnen
+        df = df.sort_values("Date")
+        valid_close = df["Close"].dropna()
+        if valid_close.empty:
+            print(f"[{ticker}] ⚠️ Keine gültigen 'Close'-Werte → übersprungen")
+            continue
 
-        # 📟 Konsole Stats
-        wins = sum(t["pnl"] > 0 for t in trades)
-        losses = sum(t["pnl"] <= 0 for t in trades)
-        total_pnl = sum(t["pnl"] for t in trades)
-        volume = sum(t["sell_price"] * t["shares"] for t in trades) if trades else 0
-        hitrate = 100 * wins / max(len(trades), 1)
-        print(f"🧪 Backtesting-Bereich: {df_opt.index[0].date()} bis {df_opt.index[-1].date()} ({backtesting_begin} % bis {backtesting_end} %)")     
-        print(f"· Trades: {len(trades)}")
-        print(f"· Gewinne: {wins}, Verluste: {losses}")
-        print(f"· Trefferquote: {hitrate:.2f} %")
-        print(f"· Gesamtgewinn: {total_pnl:,.2f} €")
-        print(f"· Volumen: {volume:,.2f} €")
-        print(f"· Beste Parameter: p = {p}, tw = {tw}")
+        start_price = valid_close.iloc[0]
+        end_price = valid_close.iloc[-1]
+        pct_change = (end_price / start_price - 1) * 100
 
-        # 📋 Details
-        if trades:
-            df_trades = pd.DataFrame(trades)
-            print(f"\n📋 MATCHED TRADES ({ticker})")
-            print(df_trades.to_string(index=False))
-        if ext_signals is not None and not isinstance(ext_signals, list):
-            df_ext = pd.DataFrame(ext_signals)
-            if not df_ext.empty:
-                print(f"\n📍 EXTENDED SIGNALS ({ticker})")
-                print(df_ext.to_string(index=False))
+        results.append({
+            "Ticker": ticker,
+            "Start": round(start_price, 2),
+            "End": round(end_price, 2),
+            "Total Return %": round(pct_change, 2),
+            "Latest Close": round(end_price, 2)
+        })
 
-        # 💾 Sammeln fürs Report
-        report_data[ticker] = {
-            "trades": trades,
-            "ext_signals": ext_signals,
-            "eq_curve": eq_curve,
-            "bh_curve": bh_curve,
-            "capital": capital,
-            "opt_p": p,
-            "opt_tw": tw,
-            "chart_img_base64": chart_img_base64,
-            "roi": roi
-        }
+        print(f"[{ticker}] ✅ Backtest: {pct_change:.2f}%")
 
-    # 🧾 Report erstellen & öffnen
-    generate_combined_report_from_memory(report_data, report_date=today)
-    # ROI anzeigen
-    print("\n📊 ROI je Ticker:")
-    for ticker, data in report_data.items():
-        print(f"· {ticker}: ROI = {data['roi']}")
+    # 📊 Ergebnisse nur wenn vorhanden
+    if results:
+        df_results = pd.DataFrame(results)
+        df_results.set_index("Ticker", inplace=True)
 
+        print("\n📊 Strategie-Ergebnisse:")
+        print(df_results.sort_values(by="Total Return %", ascending=False))
+
+        # 🔽 Ergebnisse speichern
+        export_dir = "C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading1/"
+        os.makedirs(export_dir, exist_ok=True)
+        export_path = os.path.join(export_dir, f"backtest_results_{today_str}.csv")
+        df_results.to_csv(export_path)
+        print(f"\n📁 Ergebnisse gespeichert unter: {export_path}")
+
+        return df_results
+    else:
+        print("\n🚫 Keine gültigen Ergebnisse erzeugt")
+        return pd.DataFrame()
 
 def run_crypto_backtests_test(crypto_tickers, days=365, debug=True):
     results = {}
@@ -363,7 +430,6 @@ def run_crypto_backtests_test(crypto_tickers, days=365, debug=True):
     print("\n🎯 Alle Backtests abgeschlossen.")
     return results
 
-import pandas as pd
 
 def clean_crypto_csv(filepath):
     with open(filepath, "r") as file:
@@ -387,18 +453,71 @@ def clean_crypto_csv(filepath):
     return df
 
 
-def save_crypto_csv(df, filepath, reset_index=False):
-    if reset_index:
-        df.reset_index(inplace=True)
-
-    df_out = df[["Date", "Open", "High", "Low", "Close", "Volume"]].copy()
-    df_out.to_csv(filepath, index=False)
-    print(f"💾 CSV gespeichert: {filepath}")
+def save_crypto_csv(df: pd.DataFrame, ticker: str, data_dir: str = "Crypto_trading1"):
+    file_path = os.path.join(data_dir, f"{ticker}.csv")
+    df.reset_index().to_csv(file_path, index=False)
+    print(f"✅ Gespeichert: {file_path}")
 
 
+def update_daily_crypto_with_today():
+    base_dir = "C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading1/"
+    os.makedirs(base_dir, exist_ok=True)
+
+    for ticker, cfg in crypto_tickers.items():
+        symbol = cfg["symbol"]
+        print(f"\n📈 Lade {symbol}...")
+
+        try:
+            # Lade Tagesdaten aus Yahoo
+            df = yf.download(symbol, interval="1d", period="30d", auto_adjust=True, progress=False)
+
+            if df is None or df.empty:
+                print(f"[{symbol}] ⚠️ Keine Daten erhalten")
+                continue
+
+            df.columns = [str(c).strip().capitalize() for c in df.columns]
+            df = df.dropna(subset=["Open", "High", "Low", "Close"])
+            df["Date"] = df.index
+            df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
+
+            # Speichern als *_cleaned.csv
+            file_path = os.path.join(base_dir, f"{symbol}_cleaned.csv")
+            df.to_csv(file_path, index=False)
+            print(f"[{symbol}] ✅ Gespeichert: {file_path}")
+
+        except Exception as e:
+            print(f"[{symbol}] ❌ Fehler beim Abrufen: {e}")
+    
+
+# main.pydef main():
+def main():
+    print("🔄 Aktualisiere Tagesdaten aus Minutendaten...")
+    for ticker, cfg in crypto_tickers.items():
+        symbol = cfg["symbol"]
+        try:
+            minute_df = yf.download(symbol, period="5d", interval="1m")
+            load_and_update_daily_crypto(f"data/daily_{symbol}.csv", minute_df)
+        except Exception as e:
+            print(f"[{symbol}] ⚠️ Fehler beim Aktualisieren der Tagesdaten: {e}")
+
+    print("✅ Tagesdaten aktualisiert.")
+
+    print("📥 Lade alle bereinigten Crypto-Daten...")
+    data_dict = {}
+    for ticker, cfg in crypto_tickers.items():
+        symbol = cfg["symbol"]
+        df = load_crypto_data_yf(symbol)
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            data_dict[ticker] = df
+
+    print(f"📊 Geladene Ticker: {list(data_dict.keys())}")
+
+    print("🚀 Starte Backtests...")
+    results = run_crypto_backtests()
+    print("✅ Backtests abgeschlossen.")
+
+    # Optional: Ergebnisse speichern
+    # save_results_to_file(results)
 
 if __name__ == "__main__":
-    run_crypto_backtests()
-
-
-
+    main()
