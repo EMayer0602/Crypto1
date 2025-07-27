@@ -30,30 +30,70 @@ TRADING_MODE = "paper_trading"
 API_KEY = ""
 capital_plots = {}
 CSV_PATH = "C:\\Users\\Edgar.000\\Documents\\____Trading strategies\\Crypto_trading1"
+base_dir = "C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading1"
 # safe_loader.py
 
 def safe_loader(symbol, csv_path, refresh=True):
-    filename = os.path.join(csv_path, f"{symbol}.csv")
+    filename = os.path.join(csv_path, f"{symbol}_daily.csv")
 
-    # Lade lokale Datei, falls vorhanden
+    def flatten_csv_header_if_needed(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            first = f.readline()
+            second = f.readline()
+            third = f.readline()
+            f.seek(0)
+            if first.strip().startswith("Price") and third.strip().startswith("Date"):
+                df = pd.read_csv(filename, skiprows=3, header=None)
+                df.columns = ["Date", "Open", "High", "Low", "Close", "Volume"]
+                df.to_csv(filename, index=False)
+                print(f"⚒️ Header in {filename} flattened and fixed.")
+                return df
+            elif first.strip().startswith("Date"):
+                return pd.read_csv(filename, parse_dates=["Date"], index_col="Date")
+            elif first.strip().startswith("Price"):
+                df = pd.read_csv(filename)
+                df = df.rename(columns={"Price": "Date"})
+                df.to_csv(filename, index=False)
+                print(f"⚒️ Header in {filename} fixed (Price->Date).")
+                return pd.read_csv(filename, parse_dates=["Date"], index_col="Date")
+            else:
+                raise ValueError(f"Unrecognized header in {filename}")
+
     if os.path.exists(filename):
-        df_local = pd.read_csv(filename, parse_dates=["Date"], index_col="Date")
-        last_local_date = df_local.index.max()
+        try:
+            df_local = flatten_csv_header_if_needed(filename)
+            if "Date" in df_local.columns:
+                df_local["Date"] = pd.to_datetime(df_local["Date"])
+                df_local.set_index("Date", inplace=True)
+            last_local_date = df_local.index.max()
+        except Exception as e:
+            print(f"⚠️ {symbol} CSV-Problem: {e}. Lösche und lade neu.")
+            os.remove(filename)
+            df_local = pd.DataFrame()
+            last_local_date = None
     else:
         df_local = pd.DataFrame()
         last_local_date = None
 
-    # Neue Daten holen
-    start_date = (last_local_date + pd.Timedelta(days=1)).strftime('%Y-%m-%d') if last_local_date else "2020-01-01"
-    df_new = yf.download(symbol, start=start_date, interval="1d", auto_adjust=True, progress=False)
+    today = pd.Timestamp(datetime.utcnow().date())
+    if last_local_date is not None:
+        next_date = last_local_date + pd.Timedelta(days=1)
+        if next_date > today:
+            print(f"{symbol}: Already up to date.")
+            return df_local
+        start_date = next_date.strftime('%Y-%m-%d')
+    else:
+        start_date = "2020-01-01"
 
+    df_new = yf.download(symbol, start=start_date, end=None, interval="1d", auto_adjust=True, progress=False)
     if df_new is None or df_new.empty:
         print(f"⚠️ {symbol}: Keine neuen Daten")
         return df_local if not df_local.empty else None
 
     df_new.index.name = "Date"
     df_new = df_new[["Open", "High", "Low", "Close", "Volume"]].copy()
-    df_new = df_new[~df_new.index.isin(df_local.index)]
+    if not df_local.empty:
+        df_new = df_new[~df_new.index.isin(df_local.index)]
 
     df_combined = pd.concat([df_local, df_new])
     df_combined.sort_index(inplace=True)
@@ -117,36 +157,178 @@ def load_crypto_data_yf(ticker: str, data_dir: str = "Crypto_trading1") -> pd.Da
 
     return df
 
-def load_and_update_daily_crypto(minute_df, symbol, daily_path):
-    print(f"[{symbol}] 🔄 Aktualisiere Tagesdaten aus Minutendaten...")
+import os
+import pandas as pd
+from crypto_tickers import crypto_tickers
 
-    # Prüfe, ob Tagesdatei existiert
-    if not os.path.exists(daily_path):
-        print(f"[{symbol}] ⚠️ Tagesdatei nicht gefunden. Erstelle neue: {daily_path}")
-        daily_df = pd.DataFrame()
+def load_and_update_daily_crypto(minute_df, symbol, base_dir):
+    # --- MultiIndex flatten falls nötig ---
+    if isinstance(minute_df.columns, pd.MultiIndex):
+        minute_df.columns = minute_df.columns.get_level_values(0)
+
+    # Spaltennamen vereinheitlichen (Großbuchstaben)
+    col_map = {c.lower(): c for c in ['Open', 'High', 'Low', 'Close', 'Volume']}
+    minute_df = minute_df.rename(columns={c: col_map.get(c.lower(), c) for c in minute_df.columns})
+
+    # Prüfen ob alle Spalten da sind
+    required = ['Open', 'High', 'Low', 'Close', 'Volume']
+    if not all(r in minute_df.columns for r in required):
+        raise ValueError(f"[{symbol}] Minutendaten fehlen Spalten: {set(required) - set(minute_df.columns)}")
+
+    # Datumsspalte erzeugen
+    if "datetime" in minute_df.columns:
+        minute_df['date'] = pd.to_datetime(minute_df['datetime']).dt.date
     else:
-        daily_df = pd.read_csv(daily_path, parse_dates=["date"])
+        minute_df['date'] = pd.to_datetime(minute_df.index).date
 
-    # Berechne neue Tagesdaten aus Minutendaten
-    minute_df["date"] = pd.to_datetime(minute_df["datetime"]).dt.date
-    grouped = minute_df.groupby("date")
-    new_daily = pd.DataFrame({
-        "date": grouped["datetime"].first().dt.date,
-        "open": grouped["open"].first(),
-        "high": grouped["high"].max(),
-        "low": grouped["low"].min(),
-        "close": grouped["close"].last(),
-        "volume": grouped["volume"].sum()
+    grouped = minute_df.groupby('date')
+    daily = pd.DataFrame({
+        "date": grouped["date"].first(),
+        "Open": grouped["Open"].first(),
+        "High": grouped["High"].max(),
+        "Low": grouped["Low"].min(),
+        "Close": grouped["Close"].last(),
+        "Volume": grouped["Volume"].sum()
     })
+    daily = daily.sort_values("date").reset_index(drop=True)
 
-    # Kombiniere bestehende mit neuen Daten
-    combined = pd.concat([daily_df, new_daily]).drop_duplicates("date", keep="last")
-    combined = combined.sort_values("date").reset_index(drop=True)
+    daily_path = os.path.join(base_dir, f"{symbol}_daily.csv")
+    daily[["date", "Open", "High", "Low", "Close", "Volume"]].to_csv(
+        daily_path, index=False, header=True
+    )
+    print(f"[{symbol}] ✅ Tagesdaten gespeichert unter: {daily_path}")
+    return daily
 
-    # Speichere aktualisierte Datei
-    combined.to_csv(daily_path, index=False)
-    return combined
+# -------------------------
+# BATCH für alle Ticker:
+# -------------------------
 
+
+def batch_update_all(base_dir, start_date_daily="2020-01-01", start_date_minute="2024-01-01"):
+    for symbol in CRYPTO_SYMBOLS:
+        update_daily_csv(symbol, base_dir, start_date_daily)
+        update_minute_csv(symbol, base_dir, start_date_minute)
+
+def update_daily_csv(symbol, base_dir, start_date="2020-01-01"):
+    """
+    Lädt Tagesdaten via yfinance für das Symbol und speichert sie als saubere CSV.
+    Header ist IMMER korrekt! Erzeugt Datei {symbol}_daily.csv im base_dir.
+    """
+    df = yf.download(symbol, start=start_date, interval="1d", auto_adjust=True, progress=False)
+    if df is None or df.empty:
+        print(f"[{symbol}] ⚠️ Keine Daten gefunden.")
+        return None
+
+    # MultiIndex-Problem lösen
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    df = df.reset_index()  # Date als Spalte
+    # Nur die gewünschten Spalten
+    df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
+    # Speichern mit sauberem Header
+    out_path = os.path.join(base_dir, f"{symbol}_daily.csv")
+    df.to_csv(out_path, index=False, header=True)
+    print(f"[{symbol}] ✅ Daily CSV gespeichert: {out_path}")
+    return df
+
+def update_minute_csv(symbol, base_dir, start_date):
+    import os
+    import yfinance as yf
+    import pandas as pd
+
+    df = yf.download(symbol, start=start_date, interval="1m", auto_adjust=True, progress=False)
+    if df is None or df.empty:
+        print(f"[{symbol}] ⚠️ Keine Minutendaten gefunden.")
+        return None
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.reset_index()
+
+    # Zeitspalte auf "DateTime" bringen
+    if "Datetime" in df.columns:
+        df = df.rename(columns={"Datetime": "DateTime"})
+    elif "Date" in df.columns:
+        df = df.rename(columns={"Date": "DateTime"})
+    elif "index" in df.columns:
+        df = df.rename(columns={"index": "DateTime"})
+    else:
+        raise ValueError("Keine Zeitspalte gefunden! Spalten sind: " + str(df.columns))
+
+    # Volume erzwingen
+    if "Volume" not in df.columns:
+        print(f"[{symbol}] ⚠️ Volume fehlt, wird mit NaN ergänzt.")
+        df["Volume"] = float("nan")
+
+    # Nur gewünschte Spalten und speichern
+    df = df[["DateTime", "Open", "High", "Low", "Close", "Volume"]]
+    out_path = os.path.join(base_dir, f"{symbol}_minute.csv")
+    df.to_csv(out_path, index=False, header=True)
+    print(f"[{symbol}] ✅ Minute CSV gespeichert: {out_path}")
+    return df
+
+    df = yf.download(symbol, start=start_date, interval="1m", auto_adjust=True, progress=False)
+    if df is None or df.empty:
+        print(f"[{symbol}] ⚠️ Keine Minutendaten gefunden.")
+        return None
+
+    # MultiIndex-Problem lösen
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.reset_index()
+
+    # Spaltennamen anpassen
+    if "Datetime" not in df.columns:
+        if "Date" in df.columns:
+            df = df.rename(columns={"Date": "DateTime"})
+
+    # --- Volume-Prüfung: ---
+    if "Volume" not in df.columns:
+        print(f"[{symbol}] ⚠️ Volume fehlt in den Minutendaten! Füge leere Volume-Spalte hinzu.")
+        df["Volume"] = float("nan")
+
+    # Nur die gewünschten Spalten abspeichern
+    df = df[["DateTime", "Open", "High", "Low", "Close", "Volume"]]
+    out_path = os.path.join(base_dir, f"{symbol}_minute.csv")
+    df.to_csv(out_path, index=False, header=True)
+    print(f"[{symbol}] ✅ Minute CSV gespeichert: {out_path}")
+    return df
+
+def batch_update_all_daily_csv(base_dir, get_minute_df_func):
+    """
+    Für alle Ticker aus crypto_tickers wird load_and_update_daily_crypto ausgeführt.
+    get_minute_df_func(symbol) muss ein DataFrame der Minutendaten zurückgeben.
+    """
+    for ticker, cfg in crypto_tickers.items():
+        symbol = cfg["symbol"]
+        print(f"\n⏳ Lade Minutendaten für {symbol} ...")
+        try:
+            minute_df = get_minute_df_func(symbol)
+            if minute_df is None or minute_df.empty:
+                print(f"[{symbol}] ⚠️ Keine Minutendaten gefunden, überspringe.")
+                continue
+            load_and_update_daily_crypto(minute_df, symbol, base_dir)
+        except Exception as e:
+            print(f"[{symbol}] ❌ Fehler: {e}")
+
+# Beispiel für eine Funktion, die Minutendaten lädt (Dummy!)
+def get_minute_df_yfinance(symbol):
+    import yfinance as yf
+    df = yf.download(symbol, period="5d", interval="1m", progress=False, auto_adjust=True)
+    return df if df is not None and not df.empty else None
+
+import pandas as pd
+
+def load_daily_csv(filename):
+    """
+    Lädt eine Tagesdaten-CSV mit richtigem Header.
+    Erwartet: Date,Open,High,Low,Close,Volume als Spalten.
+    Gibt DataFrame mit Date als Index zurück.
+    """
+    df = pd.read_csv(filename, parse_dates=["Date"])
+    df = df.set_index("Date")
+    return df
 
 def safe_parse_date(date_str):
     """Versucht, ein Datum im erwarteten Format zu parsen. Fehler werden zu NaT."""
@@ -256,6 +438,19 @@ def debug_loader_status(ticker, csv_path, days=365):
         print(f"❌ Fehler beim yfinance-Download: {e}")
 
 
+def load_daily_data_for_backtest(symbol, base_dir):
+    filename = f"{symbol}_daily.csv"
+    daily_path = os.path.join(base_dir, filename)
+    if not os.path.exists(daily_path):
+        print(f"[{symbol}] ❌ Datei fehlt: {daily_path}")
+        return None
+    try:
+        df = pd.read_csv(daily_path, parse_dates=["date"])
+        return df
+    except Exception as e:
+        print(f"[{symbol}] ❌ Fehler beim Einlesen: {e}")
+        return None
+
 def backtest_single_ticker(ticker, cfg, days=365):
     # 1) Daten laden
      #   df = load_crypto_data_yf(cfg["symbol"], days=days)
@@ -312,7 +507,7 @@ def run_crypto_backtests():
 
     for ticker, cfg in crypto_tickers.items():
         symbol = cfg["symbol"]
-        csv_path = f"C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading1/{symbol}_cleaned.csv"
+        csv_path = f"C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading1/{symbol}_daily.csv"
 
         # 📥 CSV laden
         try:
@@ -461,7 +656,7 @@ def save_crypto_csv(df: pd.DataFrame, ticker: str, data_dir: str = "Crypto_tradi
 
 def update_daily_crypto_with_today():
     base_dir = "C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading1/"
-    os.makedirs(base_dir, exist_ok=True)
+    os.makedirs(CSV_PATH, exist_ok=True)
 
     for ticker, cfg in crypto_tickers.items():
         symbol = cfg["symbol"]
@@ -481,43 +676,26 @@ def update_daily_crypto_with_today():
             df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
             # Speichern als *_cleaned.csv
-            file_path = os.path.join(base_dir, f"{symbol}_cleaned.csv")
+            file_path = os.path.joinCSV_PATHCSV_PATH(CSV_PATHCSV_PATH, f"{symbol}_cleaned.csv")
             df.to_csv(file_path, index=False)
             print(f"[{symbol}] ✅ Gespeichert: {file_path}")
 
         except Exception as e:
             print(f"[{symbol}] ❌ Fehler beim Abrufen: {e}")
     
-
-# main.pydef main():
 def main():
-    print("🔄 Aktualisiere Tagesdaten aus Minutendaten...")
     for ticker, cfg in crypto_tickers.items():
+        today = pd.Timestamp(datetime.utcnow().date())
         symbol = cfg["symbol"]
-        try:
-            minute_df = yf.download(symbol, period="5d", interval="1m")
-            load_and_update_daily_crypto(f"data/daily_{symbol}.csv", minute_df)
-        except Exception as e:
-            print(f"[{symbol}] ⚠️ Fehler beim Aktualisieren der Tagesdaten: {e}")
+        update_daily_csv(symbol, CSV_PATH, start_date="2020-01-01")
+        update_minute_csv(symbol, CSV_PATH, start_date=today)
 
-    print("✅ Tagesdaten aktualisiert.")
-
-    print("📥 Lade alle bereinigten Crypto-Daten...")
-    data_dict = {}
-    for ticker, cfg in crypto_tickers.items():
-        symbol = cfg["symbol"]
-        df = load_crypto_data_yf(symbol)
-        if isinstance(df, pd.DataFrame) and not df.empty:
-            data_dict[ticker] = df
-
-    print(f"📊 Geladene Ticker: {list(data_dict.keys())}")
-
-    print("🚀 Starte Backtests...")
-    results = run_crypto_backtests()
+    # 3. Run backtests
+    print("\n🚦 Starte Backtests ...")
+    run_crypto_backtests()
     print("✅ Backtests abgeschlossen.")
 
-    # Optional: Ergebnisse speichern
-    # save_results_to_file(results)
+
 
 if __name__ == "__main__":
     main()
