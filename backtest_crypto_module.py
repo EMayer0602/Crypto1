@@ -4,7 +4,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-from config import COMMISSION_RATE, MIN_COMMISSION, ORDER_ROUND_FACTOR, backtesting_begin, backtesting_end
+from config import COMMISSION_RATE, MIN_COMMISSION, ORDER_ROUND_FACTOR, backtesting_begin, backtesting_end, backtest_years
 from crypto_tickers import crypto_tickers
 from signal_utils import (
     calculate_support_resistance, compute_trend, assign_long_signals,

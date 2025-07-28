@@ -1,0 +1,13 @@
+gitignore
+# Alle Dateien ignorieren ...
+*
+
+# ... außer .py-Dateien (Achtung: nur im Hauptverzeichnis!)
+!*.py
+.pyc
+# ... außer .gitignore selbst
+!.gitignore
+
+# Optional: Auch .py-Dateien aus Unterordnern erlauben (empfohlen)
+!**/*.py
+**/*.pyc

@@ -1,3 +1,4 @@
+
 #crypto_backtesting_module.py
 import warnings
 warnings.simplefilter("ignore", category=FutureWarning)
@@ -9,7 +10,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from trade_execution import prepare_orders_from_trades, execute_trade, submit_order_bitpanda, save_all_orders_html_report
-from config import COMMISSION_RATE, MIN_COMMISSION, ORDER_ROUND_FACTOR, backtesting_begin, backtesting_end
+from config import COMMISSION_RATE, MIN_COMMISSION, ORDER_ROUND_FACTOR, backtesting_begin, backtesting_end, backtest_years
 from crypto_tickers import crypto_tickers
 from signal_utils import (
     calculate_support_resistance,
@@ -103,9 +104,6 @@ def safe_loader(symbol, csv_path, refresh=True):
     return df_combined
 
 def load_crypto_data_yf(ticker: str, data_dir: str = "Crypto_trading1") -> pd.DataFrame:
-    import os
-    import pandas as pd
-    import yfinance as yf
 
     file_path = os.path.join(data_dir, f"{ticker}.csv")
 
@@ -174,7 +172,8 @@ def load_and_update_daily_crypto(minute_df, symbol, base_dir):
     required = ['Open', 'High', 'Low', 'Close', 'Volume']
     if not all(r in minute_df.columns for r in required):
         raise ValueError(f"[{symbol}] Minutendaten fehlen Spalten: {set(required) - set(minute_df.columns)}")
-
+    print("low_dt type:", type(low_dt))
+    print("low_dt:", low_dt)
     # Datumsspalte erzeugen
     if "datetime" in minute_df.columns:
         minute_df['date'] = pd.to_datetime(minute_df['datetime']).dt.date
@@ -203,13 +202,57 @@ def load_and_update_daily_crypto(minute_df, symbol, base_dir):
 # BATCH für alle Ticker:
 # -------------------------
 
+import pandas as pd
+
+def calculate_trade_statistics(trades, equity_curve, initial_capital, trade_fee):
+    # Only consider exits
+    exits = [t for t in trades if t.get('Action', '').upper() in ('SELL', 'EXIT', 'CLOSE')]
+    total_trades = len(exits)
+    winning_trades = sum(1 for trade in exits if trade.get('PnL', 0) > 0)
+    losing_trades = total_trades - winning_trades
+    total_pnl = sum(trade.get('PnL', 0) for trade in exits)
+    total_fees = sum(
+        round((trade.get('buy_price', 0) + trade.get('sell_price', 0)) * trade.get('shares', 0) * trade_fee / 2, 2)
+        for trade in trades
+    )
+    win_percentage = (winning_trades / total_trades) * 100 if total_trades > 0 else 0
+    loss_percentage = (losing_trades / total_trades) * 100 if total_trades > 0 else 0
+
+    # Defensive equity_curve handling
+    if not isinstance(equity_curve, pd.Series):
+        equity_curve = pd.Series(equity_curve)
+    equity_curve = pd.to_numeric(equity_curve, errors='coerce').fillna(method='ffill').fillna(0)
+
+    if equity_curve.empty:
+        max_drawdown = 0.0
+    else:
+        peak = equity_curve.cummax()
+        # Prevent division by zero
+        safe_peak = peak.replace(0, 1e-9)
+        drawdown = (peak - equity_curve) / safe_peak
+        max_drawdown = drawdown.max()
+        if pd.isna(max_drawdown):
+            max_drawdown = 0.0
+
+    stats = {
+        "Total Trades": total_trades,
+        "Winning Trades": winning_trades,
+        "Losing Trades": losing_trades,
+        "Win Percentage": win_percentage,
+        "Loss Percentage": loss_percentage,
+        "Total PnL": total_pnl,
+        "Total Fees": total_fees,
+        "Final Capital": initial_capital + total_pnl,
+        "Max Drawdown": max_drawdown * 100
+    }
+    return stats
 
 def batch_update_all(base_dir, start_date_daily="2020-01-01", start_date_minute="2024-01-01"):
     for symbol in CRYPTO_SYMBOLS:
         update_daily_csv(symbol, base_dir, start_date_daily)
         update_minute_csv(symbol, base_dir, start_date_minute)
 
-def update_daily_csv(symbol, base_dir, start_date="2020-01-01"):
+def update_daily_csv(symbol, base_dir, start_date="2024-07-31"):
     """
     Lädt Tagesdaten via yfinance für das Symbol und speichert sie als saubere CSV.
     Header ist IMMER korrekt! Erzeugt Datei {symbol}_daily.csv im base_dir.
@@ -224,10 +267,20 @@ def update_daily_csv(symbol, base_dir, start_date="2020-01-01"):
         df.columns = df.columns.get_level_values(0)
 
     df = df.reset_index()  # Date als Spalte
-    # Nur die gewünschten Spalten
+
+    if 'Date' not in df.columns:
+        print(f"[{symbol}] ⚠️ 'Date' column not found after reset_index.")
+        return None
+
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
+
+    # Ensure directory exists
+    os.makedirs(base_dir, exist_ok=True)
+
     # Speichern mit sauberem Header
     out_path = os.path.join(base_dir, f"{symbol}_daily.csv")
+    print(base_dir)
+    print(out_path)
     df.to_csv(out_path, index=False, header=True)
     print(f"[{symbol}] ✅ Daily CSV gespeichert: {out_path}")
     return df
@@ -318,7 +371,23 @@ def get_minute_df_yfinance(symbol):
     df = yf.download(symbol, period="5d", interval="1m", progress=False, auto_adjust=True)
     return df if df is not None and not df.empty else None
 
-import pandas as pd
+def get_backtest_data(df, backtest_years, backtesting_begin, backtesting_end):
+    """
+    Beschränkt den DataFrame zuerst auf die letzten N Jahre/Monate,
+    dann auf den gewünschten Prozentbereich.
+    Gibt die verwendeten Zeitspannen per print() aus.
+    """
+    # Schritt 1: Nur die letzten N Jahre/Monate
+    df_years = restrict_to_backtest_years(df, backtest_years)
+    print(f"[Debug] Zeitraum nach backtest_years: {df_years.index.min().date()} bis {df_years.index.max().date()} (Zeilen: {len(df_years)})")
+
+    # Schritt 2: Prozentualer Bereich
+    df_bt = restrict_to_percent_slice(df_years, backtesting_begin, backtesting_end)
+    print(f"[Debug] Zeitraum nach Prozent-Schnitt: {df_bt.index.min().date()} bis {df_bt.index.max().date()} (Zeilen: {len(df_bt)})")
+
+    return df_bt
+
+# Hilfsfunktionen:
 
 def load_daily_csv(filename):
     """
@@ -437,7 +506,6 @@ def debug_loader_status(ticker, csv_path, days=365):
     except Exception as e:
         print(f"❌ Fehler beim yfinance-Download: {e}")
 
-
 def load_daily_data_for_backtest(symbol, base_dir):
     filename = f"{symbol}_daily.csv"
     daily_path = os.path.join(base_dir, filename)
@@ -451,31 +519,43 @@ def load_daily_data_for_backtest(symbol, base_dir):
         print(f"[{symbol}] ❌ Fehler beim Einlesen: {e}")
         return None
 
-def backtest_single_ticker(ticker, cfg, days=365):
+def backtest_single_ticker(ticker, cfg, backtest_years, backtesting_begin, backtesting_end, days=365):
     # 1) Daten laden
-     #   df = load_crypto_data_yf(cfg["symbol"], days=days)
-    csv_path = f"data/{cfg['symbol']}.csv"  # optional: Pfad zu lokalem Cache
-    df = load_crypto_data_yf(cfg["symbol"], csv_path=CSV_PATH, days=365, refresh=True)
-    print(df .index.max())
+    csv_path = f"data/{cfg['symbol']}.csv"
+    df = load_crypto_data_yf(cfg["symbol"], data_dir=CSV_PATH)
     if df is None or df.empty:
         print(f"[{ticker}] ⚠️ Keine Daten gefunden.")
         return [], [], 0, [], [], None, None
 
-    # 2) Optimierung innerhalb des Zeitbereichs
-    p, tw = berechne_best_p_tw_long(df, cfg, begin=backtesting_begin, end=backtesting_end, verbose=True, ticker=ticker)
+    # Stelle sicher, dass der Index ein DatetimeIndex ist
+    if not isinstance(df.index, pd.DatetimeIndex):
+        df.index = pd.to_datetime(df.index)
 
-    # 3) Signale erzeugen
-    support, resistance = calculate_support_resistance(df, p, tw)
-    ext_signals = assign_long_signals_extended(support, resistance, df, tw, interval="1d")
-    ext_signals = update_level_close_long(ext_signals, df)
+    # 2) Beschränke auf letzte Jahre/Monate
+    df_years = restrict_to_backtest_years(df, backtest_years)
+    print(f"[Debug] Zeitraum nach backtest_years: {df_years.index.min().date()} bis {df_years.index.max().date()} (Zeilen: {len(df_years)})")
 
-    # 4) Künstlicher Close vorbereiten
-    last_date = df.index[-1]
-    last_price = df["Close"].iloc[-1]
+    # 3) Prozentbereich aus df_years wählen
+    df_bt = restrict_to_percent_slice(df_years, backtesting_begin, backtesting_end)
+    print(f"[Debug] Zeitraum nach Prozent-Schnitt: {df_bt.index.min().date()} bis {df_bt.index.max().date()} (Zeilen: {len(df_bt)})")
 
-    # 5) Simulation der Trades
+    # 4) Optimierung innerhalb des Zeitbereichs
+    p, tw = berechne_best_p_tw_long(df_bt, cfg, begin=backtesting_begin, end=backtesting_end, verbose=True, ticker=ticker)
+
+    # 5) Signale erzeugen
+    support, resistance = calculate_support_resistance(df_bt, p, tw)
+    signal_df = assign_long_signals_extended(support, resistance, df_bt, tw, "1d")
+    signal_df = update_level_close_long(signal_df, df_bt)
+    print(signal_df.to_string(index=False))
+    #print(signal_df.columns)
+    print(signal_df[signal_df['Action'] != "None"])
+    # 6) Künstlicher Close vorbereiten
+    last_date = df_bt.index[-1]
+    last_price = df_bt["Close"].iloc[-1]
+
+    # 7) Simulation der Trades
     capital, trades = simulate_trades_compound_extended(
-        ext_signals, df, cfg,
+        signal_df, df_bt, cfg,
         commission_rate=COMMISSION_RATE,
         min_commission=MIN_COMMISSION,
         round_factor=cfg.get("order_round_factor", ORDER_ROUND_FACTOR),
@@ -483,25 +563,44 @@ def backtest_single_ticker(ticker, cfg, days=365):
         artificial_close_date=last_date,
         direction="long"
     )
+    print("\n--- Matched Trades ---")
+    for t in trades:
+        print(t)
 
-    # 6) Equity-Kurven berechnen
-    eq_curve = []
-    bh_curve = []
-    prices = df["Close"].to_numpy()
-    dates = df.index
 
-    for i, price in enumerate(prices):
-        current_date = dates[i].normalize()
-        eq = cfg["initialCapitalLong"]
-        for t in trades:
-            if pd.to_datetime(t["buy_date"]) <= current_date <= pd.to_datetime(t["sell_date"]):
-                eq += t["pnl"] / len(prices)
-        eq_curve = compute_equity_curve(df_opt, trades, cfg["initialCapitalLong"], long=True)
-        bh_curve = cfg["initialCapitalLong"] * (df_opt["Close"] / df_opt["Close"].iloc[0])
+    # 8) Equity-Kurven berechnen
+    eq_curve = compute_equity_curve(df_bt, trades, cfg["initialCapitalLong"], long=True)
+    print(f"[Debug] trades={trades}, eq_curve_len={len(eq_curve) if eq_curve is not None else 'None'}")
+    stats = calculate_trade_statistics(trades, eq_curve, cfg["initialCapitalLong"], COMMISSION_RATE)
+    print("\n--- Trade-Statistik ---")
+    for k, v in stats.items():
+        print(f"{k:20}: {v}")
+    print("[Debug] Stats-Block erreicht und ausgegeben.")
+    bh_curve = cfg["initialCapitalLong"] * (df_bt["Close"] / df_bt["Close"].iloc[0])
 
-    return trades, ext_signals, capital, eq_curve, bh_curve, p, tw
+    return trades, signal_df, capital, eq_curve, bh_curve, p, tw,stats
 
-def run_crypto_backtests():
+def restrict_to_backtest_years(df, backtest_years):    
+    # Nimmt die letzten N Jahre oder Monate (backtest_years = [0, 2] für 2 Jahre)
+    max_years = backtest_years[1]
+    if max_years < 1:
+        min_timestamp = df.index.max() - pd.DateOffset(months=int(max_years*12))
+    else:
+        min_timestamp = df.index.max() - pd.DateOffset(years=int(max_years))
+    return df[df.index >= min_timestamp]
+
+def restrict_to_percent_slice(df, begin, end):
+    n = len(df)
+    start_idx = int(n * begin / 100)
+    end_idx = int(n * end / 100)
+    return df.iloc[start_idx:end_idx]
+
+def run_crypto_backtests(
+    crypto_tickers,
+    backtest_years=[0,2],           # z.B. die letzten 2 Jahre
+    backtesting_begin=0,            # Prozentbereich: ab
+    backtesting_end=100             # Prozentbereich: bis
+):
     today_str = datetime.now().strftime("%Y-%m-%d")
     results = []
 
@@ -524,10 +623,17 @@ def run_crypto_backtests():
 
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
         df = df.dropna(subset=["Date", "Close"])
+        df = df.sort_values("Date")
+        df = df.set_index("Date")
 
         # Heute ergänzen, falls nicht vorhanden
-        if today_str not in df["Date"].dt.strftime("%Y-%m-%d").values:
-            df1m = yf.download(symbol, interval="1m", period="1d", progress=False, auto_adjust=True)
+        if today_str not in df.index.strftime("%Y-%m-%d"):
+            try:
+                import yfinance as yf
+                df1m = yf.download(symbol, interval="1m", period="1d", progress=False, auto_adjust=True)
+            except Exception as e:
+                print(f"[{ticker}] ⚠️ Fehler beim Abrufen von yfinance: {e}")
+                df1m = None
 
             if df1m is not None and not df1m.empty:
                 df1m.columns = [str(c).strip().capitalize() for c in df1m.columns]
@@ -535,7 +641,6 @@ def run_crypto_backtests():
 
                 if all(col in df1m.columns for col in required_cols):
                     df1m = df1m.dropna(subset=required_cols)
-
                     if not df1m.empty:
                         new_row = {
                             "Date": today_str,
@@ -545,7 +650,7 @@ def run_crypto_backtests():
                             "Close": df1m["Close"].iloc[-1],
                             "Volume": df1m["Volume"].sum() if "Volume" in df1m.columns else None
                         }
-                        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                        df = pd.concat([df, pd.DataFrame([new_row]).set_index("Date")], axis=0)
                         print(f"[{ticker}] ➕ Tageskurs ergänzt: {new_row['Close']:.2f} EUR")
                     else:
                         print(f"[{ticker}] ⚠️ Minuten-Daten leer nach dropna")
@@ -555,9 +660,14 @@ def run_crypto_backtests():
             else:
                 print(f"[{ticker}] ⚠️ Keine Minuten-Daten verfügbar")
 
-        # ROI berechnen
-        df = df.sort_values("Date")
-        valid_close = df["Close"].dropna()
+        # Beschneiden auf Zeitraum/Prozentbereich
+        df_years = restrict_to_backtest_years(df, backtest_years)
+        print(f"[{ticker}] Zeitraum nach backtest_years: {df_years.index.min().date()} bis {df_years.index.max().date()} (Zeilen: {len(df_years)})")
+
+        df_bt = restrict_to_percent_slice(df_years, backtesting_begin, backtesting_end)
+        print(f"[{ticker}] Zeitraum nach Prozent-Schnitt: {df_bt.index.min().date()} bis {df_bt.index.max().date()} (Zeilen: {len(df_bt)})")
+
+        valid_close = df_bt["Close"].dropna()
         if valid_close.empty:
             print(f"[{ticker}] ⚠️ Keine gültigen 'Close'-Werte → übersprungen")
             continue
@@ -596,36 +706,6 @@ def run_crypto_backtests():
         print("\n🚫 Keine gültigen Ergebnisse erzeugt")
         return pd.DataFrame()
 
-def run_crypto_backtests_test(crypto_tickers, days=365, debug=True):
-    results = {}
-    for ticker, cfg in configs.items():
-        print(f"\n🔄 Backtest für {ticker} wird gestartet…")
-
-        trades, signals, capital, equity_curve, bh_curve, p, tw = backtest_single_ticker(ticker, cfg, days=days)
-
-        if equity_curve is None or len(equity_curve) == 0:
-            print(f"⚠️ Kein Equity Curve erhalten. Debug-Modus aktiv…")
-            if debug:
-                debug_loader_status(cfg["symbol"], 
-                    csv_path="C:\\Users\\Edgar.000\\Documents\\____Trading strategies\\Crypto_trading",
-                    days=days)
-            continue
-
-        results[ticker] = {
-            "trades": trades,
-            "signals": signals,
-            "capital": capital,
-            "equity_curve": equity_curve,
-            "buy_hold_curve": bh_curve,
-            "performance": p,
-            "trade_window": tw
-        }             
-        print(f"✅ {ticker}: {len(trades)} Trades – Kapital: {capital:.2f} €")
-    
-    print("\n🎯 Alle Backtests abgeschlossen.")
-    return results
-
-
 def clean_crypto_csv(filepath):
     with open(filepath, "r") as file:
         raw = file.readlines()
@@ -652,7 +732,7 @@ def save_crypto_csv(df: pd.DataFrame, ticker: str, data_dir: str = "Crypto_tradi
     file_path = os.path.join(data_dir, f"{ticker}.csv")
     df.reset_index().to_csv(file_path, index=False)
     print(f"✅ Gespeichert: {file_path}")
-
+0
 
 def update_daily_crypto_with_today():
     base_dir = "C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading1/"
@@ -676,7 +756,7 @@ def update_daily_crypto_with_today():
             df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
             # Speichern als *_cleaned.csv
-            file_path = os.path.joinCSV_PATHCSV_PATH(CSV_PATHCSV_PATH, f"{symbol}_cleaned.csv")
+            file_path = os.path.joinCSV_PATH(CSV_PATH, f"{symbol}_cleaned.csv")
             df.to_csv(file_path, index=False)
             print(f"[{symbol}] ✅ Gespeichert: {file_path}")
 
@@ -684,18 +764,59 @@ def update_daily_crypto_with_today():
             print(f"[{symbol}] ❌ Fehler beim Abrufen: {e}")
     
 def main():
-    for ticker, cfg in crypto_tickers.items():
-        today = pd.Timestamp(datetime.utcnow().date())
-        symbol = cfg["symbol"]
-        update_daily_csv(symbol, CSV_PATH, start_date="2020-01-01")
-        update_minute_csv(symbol, CSV_PATH, start_date=today)
+    # Für jedes Symbol die zugehörige Konfiguration verwenden
+    for symbol, cfg in crypto_tickers.items():
+        print(f"\n===== {symbol} =====")
+        # Backtest durchführen
+        trades, signal_df, capital, eq_curve, bh_curve, p, tw, stats = backtest_single_ticker(
+            symbol, cfg, backtest_years, backtesting_begin, backtesting_end
+        )
 
-    # 3. Run backtests
-    print("\n🚦 Starte Backtests ...")
-    run_crypto_backtests()
-    print("✅ Backtests abgeschlossen.")
+        # OHLC-Daten laden
+        df = load_crypto_data_yf(symbol, data_dir=CSV_PATH)
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
+        standard_signals = signal_df
 
+        # Support/Resistance berechnen
+        support, resistance = calculate_support_resistance(df, p, tw)
+        print("✅ Backtest abgeschlossen.")
 
+        # Extended Trades ausgeben
+        print("\n--- Extended Trades ---")
+        if not signal_df.empty:
+            print(signal_df)
+        else:
+            print("Keine extended trades gefunden.")
+
+        # Matched Trades ausgeben
+        print("\n--- Matched Trades ---")
+        if trades:
+            df_trades = pd.DataFrame(trades)
+            print(df_trades)
+        else:
+            print("Keine matched trades gefunden.")
+
+        # Statistiken ausgeben
+        print("\n--- Statistiken ---")
+        if stats:
+            for k, v in stats.items():
+                print(f"{k:20}: {v}")
+        else:
+            print("Keine Statistiken berechnet.")
+
+        # Plot erzeugen
+        img_base64 = plotly_combined_chart_and_equity(
+            df,
+            standard_signals,
+            support,
+            resistance,
+            eq_curve,
+            bh_curve,
+            symbol
+        )
+        print(f"{symbol}: Plotly chart generated.")
 
 if __name__ == "__main__":
     main()

@@ -3,37 +3,44 @@
 import pandas as pd
 import numpy as np
 from scipy.signal import argrelextrema
-from config import COMMISSION_RATE, MIN_COMMISSION, ORDER_ROUND_FACTOR, backtesting_begin, backtesting_end
+from config import COMMISSION_RATE, MIN_COMMISSION, ORDER_ROUND_FACTOR, backtesting_begin, backtesting_end, backtest_years
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
- 
+
 def calculate_support_resistance(df, past_window, trade_window):
-    total = int(past_window + trade_window)
-    prices = df["Close"].to_numpy(dtype=float)
-    dates = df.index
+    """
+    Berechnet Support- und Resistance-Levels für ein DataFrame mit 'Close'-Spalte.
 
-    mins = argrelextrema(prices, np.less, order=total)[0]
-    #print(mins)
-    maxs = argrelextrema(prices, np.greater, order=total)[0]
-    #print(maxs)
-    dates = pd.to_datetime(dates)  # ← sicherstellen, dass es Timestamps sind
-    support = pd.Series(prices[mins], index=dates[mins])
-    resistance = pd.Series(prices[maxs], index=dates[maxs])
+    Args:
+        df (pd.DataFrame): DataFrame mit mindestens 'Close'-Spalte und DatetimeIndex.
+        past_window (int): Fenstergröße für Support/Resistance.
+        trade_window (int): Abstand zur nächsten Kerze (z.B. für Backtest).
 
-    # Absolute Low/High ergänzen
-    low_dt = pd.to_datetime(df["Close"].idxmin())
-    high_dt = pd.to_datetime(df["Close"].idxmax())
-    low_val = float(df["Close"].min())
-    high_val = float(df["Close"].max())
+    Returns:
+        support (pd.Series), resistance (pd.Series)
+    """
+    if not isinstance(df.index, pd.DatetimeIndex):
+        df = df.copy()
+        df.index = pd.to_datetime(df.index)
 
-    if low_dt not in support.index:
-        support.loc[low_dt] = low_val
-    if high_dt not in resistance.index:
-        resistance.loc[high_dt] = high_val
+    close = df['Close'].values
 
-    return support.sort_index(), resistance.sort_index()
+    support_idx = []
+    resistance_idx = []
 
+    # Berechne lokale Minima/Maxima
+    for i in range(past_window, len(close) - trade_window):
+        window = close[i - past_window : i + trade_window + 1]
+        if close[i] == np.min(window):
+            support_idx.append(i)
+        if close[i] == np.max(window):
+            resistance_idx.append(i)
+
+    # Support/Resistance als Series mit Zeitstempel als Index, 1D-Vektoren!
+    support = pd.Series(close[support_idx].flatten(), index=df.index[support_idx])
+    resistance = pd.Series(close[resistance_idx].flatten(), index=df.index[resistance_idx])
+    return support, resistance
 
 def compute_trend(df, window=20):
     return df["Close"].rolling(window=window).mean()
@@ -74,6 +81,126 @@ def assign_long_signals(support, resistance, df, tw, interval):
 
     return sig
 
+def simulate_trades_compound_extended(
+    signal_df, market_df, config,
+    commission_rate=0.001,
+    min_commission=1.0,
+    round_factor=1,
+    artificial_close_price=None,
+    artificial_close_date=None,
+    direction="long"
+):
+    import pandas as pd
+    import numpy as np
+
+    capital = config.get("initialCapitalLong" if direction == "long" else "initialCapitalShort", 10000)
+    base = direction.capitalize()
+    possible_date_cols = [f"{base} Date detected", f"{base} Date", "Detect Date", "Trade Day"]
+    possible_action_cols = [f"{base} Action", "Action"]
+
+    date_col = next((col for col in possible_date_cols if col in signal_df.columns), None)
+    action_col = next((col for col in possible_action_cols if col in signal_df.columns), None)
+
+    if not date_col or not action_col:
+        print(f"⚠️ Fehlende Spalten für {direction}: {date_col=} {action_col=}")
+        return capital, []
+
+    price_mode = config.get("trade_on", "close").lower()
+    price_col = "Open" if price_mode == "open" else "Close"
+    if price_col not in market_df.columns:
+        print(f"⚠️ Preisspalte '{price_col}' fehlt in Marktdaten.")
+        return capital, []
+
+    # REMOVED: signal_df = signal_df.dropna(subset=[date_col])
+    signal_df = signal_df.sort_values(by=date_col)
+    trades = []
+    position_active = False
+    buy_price = buy_date = prev_cap = shares = None
+
+    # Prepare index: ensure DatetimeIndex, normalized (date only), unique
+    market_df = market_df.copy()
+    market_df.index = pd.to_datetime(market_df.index).normalize()
+    if not market_df.index.is_unique:
+        market_df = market_df[~market_df.index.duplicated(keep='first')]
+
+    for _, row in signal_df.iterrows():
+        action = str(row.get(action_col)).lower()
+        exec_date = pd.to_datetime(row.get(date_col)).normalize() if pd.notna(row.get(date_col)) else None
+
+        if action not in ("buy", "sell", "short", "cover") or exec_date is None:
+            continue
+
+        # Robust price lookup: always scalar, never Series/array
+        price = np.nan
+        if exec_date in market_df.index:
+            price = market_df.loc[exec_date, price_col]
+        else:
+            idx = market_df.index.get_indexer([exec_date], method='nearest')[0]
+            if idx >= 0 and idx < len(market_df):
+                price = market_df.iloc[idx][price_col]
+
+        # If price is a Series or array, get first element
+        if isinstance(price, (pd.Series, np.ndarray)):
+            price = price.iloc[0] if isinstance(price, pd.Series) else price[0]
+
+        # Allow NaN prices for extended trades
+        # if price is None or pd.isna(price):
+        #     continue
+
+        # BUY or SHORT
+        if action in ("buy", "short") and not position_active:
+            shares = calculate_shares(capital, price, round_factor)
+            if shares < 1e-6:
+                continue
+            buy_price = price
+            buy_date = exec_date
+            prev_cap = capital
+            position_active = True
+
+        # SELL or COVER
+        elif action in ("sell", "cover") and position_active:
+            sell_price = price
+            sell_date = exec_date
+            profit = (sell_price - buy_price) * shares if direction == "long" else (buy_price - sell_price) * shares
+            turnover = shares * ((buy_price if buy_price is not None else 0) + (sell_price if sell_price is not None else 0))
+            fee = max(min_commission, turnover * commission_rate)
+            new_cap = prev_cap + profit - fee
+
+            trades.append({
+                "buy_date": buy_date,
+                "sell_date": sell_date,
+                "shares": round(shares, 4),
+                "buy_price": None if buy_price is None or pd.isna(buy_price) else round(buy_price, 2),
+                "sell_price": None if sell_price is None or pd.isna(sell_price) else round(sell_price, 2),
+                "fee": round(fee, 2),
+                "pnl": None if new_cap is None or prev_cap is None else round(new_cap - prev_cap, 2)
+            })
+
+            capital = new_cap
+            position_active = False
+
+    # Artificial close if still in a position
+    if position_active and artificial_close_price is not None and artificial_close_date is not None:
+        sell_price = artificial_close_price
+        sell_date = pd.to_datetime(artificial_close_date).normalize()
+        profit = (sell_price - buy_price) * shares if direction == "long" else (buy_price - sell_price) * shares
+        turnover = shares * ((buy_price if buy_price is not None else 0) + (sell_price if sell_price is not None else 0))
+        fee = max(min_commission, turnover * commission_rate)
+        new_cap = prev_cap + profit - fee
+
+        trades.append({
+            "buy_date": buy_date,
+            "sell_date": sell_date,
+            "shares": round(shares, 4),
+            "buy_price": None if buy_price is None or pd.isna(buy_price) else round(buy_price, 2),
+            "sell_price": None if sell_price is None or pd.isna(sell_price) else round(sell_price, 2),
+            "fee": round(fee, 2),
+            "pnl": None if new_cap is None or prev_cap is None else round(new_cap - prev_cap, 2)
+        })
+
+        capital = new_cap
+
+    return capital, trades
 
 def assign_long_signals_extended(support, resistance, df, tw, interval):
     sig = assign_long_signals(support, resistance, df, tw, interval)
@@ -257,117 +384,4 @@ def berechne_best_p_tw_long(df, config, begin=0, end=100, verbose=True, ticker=N
 
     best_row = df_result.iloc[0]
     return int(best_row["past_window"]), int(best_row["trade_window"])
-
-def simulate_trades_compound_extended(
-    signal_df, market_df, config,
-    commission_rate=0.001,
-    min_commission=1.0,
-    round_factor=1,
-    artificial_close_price=None,
-    artificial_close_date=None,
-    direction="long"
-):
-    import pandas as pd
-
-    # === Kapital initialisieren
-    capital = config.get("initialCapitalLong" if direction == "long" else "initialCapitalShort", 10000)
-
-    # === Spaltennamen dynamisch festlegen
-    base = direction.capitalize()  # "Long" oder "Short"
-
-    possible_date_cols = [f"{base} Date detected", f"{base} Date", "Detect Date", "Trade Day"]
-    possible_action_cols = [f"{base} Action", "Action"]
-
-    # === Spalte wählen: Datum
-    date_col = next((col for col in possible_date_cols if col in signal_df.columns), None)
-    action_col = next((col for col in possible_action_cols if col in signal_df.columns), None)
-
-    if not date_col or not action_col:
-        print(f"⚠️ Fehlende Spalten für {direction}: {date_col=} {action_col=}")
-        return capital, []
-
-    # === trade_on-basierte Preiswahl
-    price_mode = config.get("trade_on", "close").lower()
-    price_col = "Open" if price_mode == "open" else "Close"
-    if price_col not in market_df.columns:
-        print(f"⚠️ Preisspalte '{price_col}' fehlt in Marktdaten.")
-        return capital, []
-
-    # === Vorbereitung
-    signal_df = signal_df.dropna(subset=[date_col])
-    signal_df = signal_df.sort_values(by=date_col)
-    trades = []
-    position_active = False
-    buy_price = buy_date = prev_cap = shares = None
-
-    for _, row in signal_df.iterrows():
-        action = str(row.get(action_col)).lower()
-        exec_date = pd.to_datetime(row.get(date_col))
-
-        if action not in ("buy", "sell", "short", "cover") or pd.isna(exec_date):
-            continue
-
-        # Preis abrufen
-        if exec_date in market_df.index:
-            price = market_df.at[exec_date, price_col]
-        else:
-            idx = market_df.index.searchsorted(exec_date)
-            price = market_df.iloc[idx][price_col] if idx < len(market_df.index) else None
-
-        if price is None or pd.isna(price):
-            continue
-
-        # BUY or SHORT
-        if action in ("buy", "short") and not position_active:
-            shares = calculate_shares(capital, price, round_factor)
-            if shares < 1e-6:
-                continue
-            buy_price = price
-            buy_date = exec_date
-            prev_cap = capital
-            position_active = True
-
-        # SELL or COVER
-        elif action in ("sell", "cover") and position_active:
-            sell_price = price
-            sell_date = exec_date
-            profit = (sell_price - buy_price) * shares if direction == "long" else (buy_price - sell_price) * shares
-            turnover = shares * (buy_price + sell_price)
-            fee = max(min_commission, turnover * commission_rate)
-            new_cap = prev_cap + profit - fee
-
-            trades.append({
-                "buy_date": buy_date,
-                "sell_date": sell_date,
-                "shares": round(shares, 4),
-                "buy_price": round(buy_price, 2),
-                "sell_price": round(sell_price, 2),
-                "fee": round(fee, 2),
-                "pnl": round(new_cap - prev_cap, 2)
-            })
-
-            capital = new_cap
-            position_active = False
-
-    # === Künstlicher Close
-    if position_active and artificial_close_price is not None and artificial_close_date is not None:
-        sell_price = artificial_close_price
-        sell_date = artificial_close_date
-        profit = (sell_price - buy_price) * shares if direction == "long" else (buy_price - sell_price) * shares
-        turnover = shares * (buy_price + sell_price)
-        fee = max(min_commission, turnover * commission_rate)
-        new_cap = prev_cap + profit - fee
-
-        trades.append({
-            "buy_date": buy_date,
-            "sell_date": sell_date,
-            "shares": round(shares, 4),
-            "buy_price": round(buy_price, 2),
-            "sell_price": round(sell_price, 2),
-            "fee": round(fee, 2),
-            "pnl": round(new_cap - prev_cap, 2)
-        })
-
-        capital = new_cap
-
-    return capital, trades
+	
