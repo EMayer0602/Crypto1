@@ -45,6 +45,36 @@ def save_html_report(ticker, ext_signals, trades, final_capital, buyhold_capital
     html += "<h2>📊 Erweiterte Signale</h2>"
     html += ext_df.tail(20).to_html(index=False)
 
+    # ✅ WEEKLY TRADES SECTION HINZUFÜGEN
+    # Überprüfe ob weekly_trades_html verfügbar ist (wird aus crypto_backtesting_module übergeben)
+    weekly_trades_html = locals().get('weekly_trades_html', '')
+    if weekly_trades_html:
+        html += weekly_trades_html
+    else:
+        # Fallback: Erstelle Weekly Trades aus trades wenn verfügbar
+        if not df_trades.empty:
+            try:
+                from trades_weekly_display import create_weekly_trades_html
+                # Create dummy data_df from Close prices (placeholder)
+                import pandas as pd
+                dummy_data = pd.DataFrame({
+                    'Open': [1, 1, 1],
+                    'High': [1, 1, 1], 
+                    'Low': [1, 1, 1],
+                    'Close': [1, 1, 1],
+                    'Volume': [1, 1, 1]
+                }, index=pd.date_range('2025-08-03', periods=3))
+                
+                # Convert trades DataFrame to list
+                trades_list = []
+                for _, trade in df_trades.iterrows():
+                    trades_list.append(trade.to_dict())
+                
+                weekly_html = create_weekly_trades_html(trades_list, dummy_data, ticker, days_back=7)
+                html += weekly_html
+            except Exception as e:
+                html += f"<p style='color: orange;'>⚠️ Weekly Trades nicht verfügbar: {str(e)}</p>"
+
     html += f"<p style='font-size:0.9em;color:#888;'>Generiert am {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}</p>"
     html += "</body></html>"
 
@@ -53,6 +83,144 @@ def save_html_report(ticker, ext_signals, trades, final_capital, buyhold_capital
         f.write(html)
 
     print(f"[REPORT] Einzelreport gespeichert: {path}")
+    return path
+
+def save_html_report_with_weekly(ticker, ext_signals, trades, final_capital, buyhold_capital, 
+                                 weekly_trades_html="", base64_plot=None, output_dir="reports"):
+    """
+    Enhanced HTML Report mit Weekly Trades Integration
+    
+    Args:
+        ticker: Symbol
+        ext_signals: Extended Signals DataFrame
+        trades: Trades Liste oder DataFrame
+        final_capital: Finales Kapital
+        buyhold_capital: Buy & Hold Kapital
+        weekly_trades_html: HTML String für Weekly Trades
+        base64_plot: Base64 Chart
+        output_dir: Output Directory
+    
+    Returns:
+        str: Pfad zur HTML Datei
+    """
+    import os
+    import pandas as pd
+    from datetime import datetime
+
+    # Output Directory erstellen
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Trades DataFrame erstellen
+    if isinstance(trades, list):
+        df_trades = pd.DataFrame(trades)
+    else:
+        df_trades = trades.copy() if trades is not None else pd.DataFrame()
+    
+    # Extended Signals DataFrame
+    ext_df = pd.DataFrame(ext_signals) if not isinstance(ext_signals, pd.DataFrame) else ext_signals.copy()
+
+    # === Farbcodierung für PnL ===
+    if not df_trades.empty and 'pnl' in df_trades.columns:
+        df_trades["pnl_color"] = df_trades["pnl"].apply(
+            lambda x: f'<span style="color:{"green" if x > 0 else "red"}">{x:,.2f}</span>'
+        )
+
+    # HTML Struktur
+    html = f"""<!DOCTYPE html>
+    <html>
+    <head>
+    <title>Enhanced Strategiereport – {ticker}</title>
+    <meta charset="UTF-8">
+    <style>
+    body {{ font-family: Arial, sans-serif; margin: 40px; background-color: #f9f9f9; }}
+    .container {{ max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
+    table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: center; }}
+    th {{ background-color: #eee; font-weight: bold; }}
+    tr:nth-child(even) {{ background-color: #f9f9f9; }}
+    .summary {{ background-color: #e7f3ff; padding: 20px; border-radius: 5px; margin: 20px 0; }}
+    .positive {{ color: green; font-weight: bold; }}
+    .negative {{ color: red; font-weight: bold; }}
+    .neutral {{ color: blue; }}
+    h1 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }}
+    h2 {{ color: #34495e; border-left: 4px solid #3498db; padding-left: 10px; }}
+    h3 {{ color: #7f8c8d; }}
+    </style>
+    </head>
+    <body>
+    <div class="container">
+    <h1>📊 Enhanced Strategiereport für {ticker}</h1>
+    
+    <div class="summary">
+        <h2>💼 Portfolio Übersicht</h2>
+        <p><strong>Strategie-Endkapital:</strong> <span class="{'positive' if final_capital > 10000 else 'negative'}">€{final_capital:,.2f}</span></p>
+        <p><strong>Buy & Hold Endkapital:</strong> <span class="neutral">€{buyhold_capital:,.2f}</span></p>
+        <p><strong>Anzahl Trades:</strong> {len(df_trades)}</p>
+        <p><strong>Performance vs Buy & Hold:</strong> 
+           <span class="{'positive' if final_capital > buyhold_capital else 'negative'}">
+           {((final_capital/buyhold_capital-1)*100):+.2f}%
+           </span>
+        </p>
+    </div>
+    """
+
+    # Chart einfügen falls verfügbar
+    if base64_plot:
+        html += f'<h2>📈 Kapitalverlauf</h2><img src="data:image/png;base64,{base64_plot}" style="width: 100%; max-width: 800px; height: auto;">'
+
+    # ✅ WEEKLY TRADES SECTION
+    if weekly_trades_html:
+        html += weekly_trades_html
+    else:
+        html += f"""
+        <h2>📅 Trades der letzten 7 Tage</h2>
+        <p style="color: orange;">⚠️ Keine Weekly Trades Daten verfügbar</p>
+        """
+
+    # Trades Tabelle
+    if not df_trades.empty:
+        html += "<h2>📋 Alle Matched Trades</h2>"
+        
+        # Spalten für die Anzeige auswählen
+        display_columns = []
+        for col in ["buy_date", "buy_price", "sell_date", "sell_price", "shares", "pnl_color", "pnl"]:
+            if col in df_trades.columns:
+                display_columns.append(col)
+        
+        if display_columns:
+            if 'pnl_color' in display_columns:
+                display_columns.remove('pnl')  # Verwende pnl_color statt pnl
+            html += df_trades[display_columns].to_html(index=False, escape=False, classes="trades-table")
+        else:
+            html += df_trades.to_html(index=False, escape=False, classes="trades-table")
+
+    # Extended Signals
+    if not ext_df.empty:
+        html += "<h2>📊 Erweiterte Signale (letzte 20)</h2>"
+        html += ext_df.tail(20).to_html(index=False, classes="signals-table")
+
+    # Footer
+    html += f"""
+    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 0.9em; color: #888;">
+        <p>🕒 Generiert am {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        <p>📊 Enhanced Report mit Weekly Trades Integration</p>
+        <p>💡 Limit Orders: &lt;Open, Close&gt; | Artificial: Open, Close</p>
+    </div>
+    
+    </div>
+    </body>
+    </html>"""
+
+    # HTML Datei speichern
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    html_filename = f"enhanced_report_{ticker.replace('-', '_')}_{timestamp}.html"
+    html_file_path = os.path.join(output_dir, html_filename)
+    
+    with open(html_file_path, 'w', encoding='utf-8') as f:
+        f.write(html)
+    
+    print(f"✅ Enhanced HTML Report mit Weekly Trades gespeichert: {html_file_path}")
+    return html_file_path
 
 def generate_combined_report(tickers, report_date, capital_plots=None):
     """

@@ -12,17 +12,19 @@ import time
 from trade_execution import prepare_orders_from_trades, execute_trade, submit_order_bitpanda, save_all_orders_html_report
 from config import COMMISSION_RATE, MIN_COMMISSION, ORDER_ROUND_FACTOR, backtesting_begin, backtesting_end, backtest_years
 from crypto_tickers import crypto_tickers
-from signal_utils import (
-    calculate_support_resistance,
-    compute_trend,
-    assign_long_signals,
-    assign_long_signals_extended,
-    update_level_close_long,
-    simulate_trades_compound_extended,
-    berechne_best_p_tw_long,
-    plot_combined_chart_and_equity
-)
+# TEMPORARILY COMMENTED OUT - signal_utils.py not found
+# from signal_utils import (
+#     calculate_support_resistance,
+#     compute_trend,
+#     assign_long_signals,
+#     assign_long_signals_extended,
+#     update_level_close_long,
+#     simulate_trades_compound_extended,
+#     berechne_best_p_tw_long,
+#     plot_combined_chart_and_equity
+# )
 # Am Anfang der Datei bei den anderen Imports hinzufügen:
+from trades_weekly_display import display_weekly_trades_console, create_weekly_trades_html
 
 # FIXED: Remove non-existent function
 from plotly_utils import (
@@ -32,6 +34,13 @@ from plotly_utils import (
     print_statistics_table
 )
 from report_generator import generate_combined_report_from_memory
+
+# Import Weekly Trades Display Module
+from trades_weekly_display import (
+    display_weekly_trades_console,
+    create_weekly_trades_html,
+    add_weekly_trades_to_existing_reports
+)
 
 # --- Globale Variablen ---
 TRADING_MODE = "paper_trading"
@@ -225,13 +234,15 @@ def compute_equity_curve(df, trades, start_capital, long=True):
             except (KeyError, ValueError, TypeError):
                 pass
 
-        # Exit? - Angepasst an matched_trades Struktur
+        # Exit? - Angepasst an matched_trades Struktur (aber nicht bei offenen Trades)
         if trade_idx < len(trades):
             exit_key = "Exit Date" if "Exit Date" in trades[trade_idx] else ("sell_date" if long else "cover_date")
+            trade_status = trades[trade_idx].get("Status", "CLOSED")
             
             try:
                 exit_date = pd.Timestamp(trades[trade_idx].get(exit_key))
-                if exit_date == date:
+                # Nur bei geschlossenen Trades als Exit behandeln
+                if exit_date == date and trade_status == "CLOSED":
                     # PnL aus matched_trades oder berechne
                     if "PnL" in trades[trade_idx]:
                         pnl = trades[trade_idx]["PnL"]
@@ -246,6 +257,9 @@ def compute_equity_curve(df, trades, start_capital, long=True):
                     print(f"   📉 EXIT  {date.strftime('%Y-%m-%d')}: PnL €{pnl:.2f}, New Capital €{cap:.2f}")
                     pos = 0
                     entry_price = 0
+                    trade_idx += 1
+                elif trade_status == "OPEN" and exit_date <= date:
+                    # Bei offenen Trades: Wechsle zum nächsten Trade ohne Exit
                     trade_idx += 1
             except (KeyError, ValueError, TypeError):
                 pass
@@ -392,7 +406,10 @@ def main_backtest_with_analysis():
                 
                 if 'optimal_parameters' in result:
                     params = result['optimal_parameters']
-                    print(f"   🎯 Optimal Parameters: Past={params.get('optimal_past_window', 'N/A')}, Trade={params.get('optimal_trade_window', 'N/A')}")
+                    pnl_info = ""
+                    if 'optimal_pnl' in params:
+                        pnl_info = f", PnL=€{params['optimal_pnl']:.2f}"
+                    print(f"   🎯 Optimal Parameters: Past_Window={params.get('optimal_past_window', 'N/A')}, Trade_Window={params.get('optimal_trade_window', 'N/A')}{pnl_info}")
         
         # Save CSV
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1368,10 +1385,10 @@ def run_backtest(symbol, config):
         else:
             print("❌ Keine Extended Trades vorhanden")
         
-        # 4. MATCHED TRADES - SIMULATION
+        # 4. MATCHED TRADES - SIMULATION (mit offenen Trades)
         print(f"\n📊 4. MATCHED TRADES - SIMULATION - {symbol}")
         print("="*120)
-        matched_trades = simulate_matched_trades(ext_full, initial_capital, commission_rate)
+        matched_trades = simulate_matched_trades(ext_full, initial_capital, commission_rate, df)
         if not matched_trades.empty:
             print(matched_trades.to_string(index=True, max_rows=None))
         else:
@@ -1387,7 +1404,7 @@ def run_backtest(symbol, config):
         # Tabelle anzeigen
         display_extended_trades_table(ext_full, symbol)
         
-        # Result
+        # Result erstellen BEVOR Weekly Trades
         result = {
             'success': True,
             'symbol': symbol,
@@ -1408,6 +1425,29 @@ def run_backtest(symbol, config):
             'support_levels': len(supp_full),
             'resistance_levels': len(res_full)
         }
+        
+        # ✅ WEEKLY TRADES ANZEIGE HINZUFÜGEN (2 Wochen)
+        print(f"\n🔄 Zeige Weekly Trades für {symbol} (letzte 2 Wochen)...")
+        if matched_trades is not None and not matched_trades.empty:
+            # Convert DataFrame to list of dicts for the display function
+            trades_list = []
+            for _, trade_row in matched_trades.iterrows():
+                trade_dict = trade_row.to_dict()
+                trades_list.append(trade_dict)
+            
+            # Console Display für Weekly Trades (14 Tage = 2 Wochen)
+            display_weekly_trades_console(trades_list, df, symbol, days_back=14)
+            
+            # HTML Content für Weekly Trades erstellen (14 Tage = 2 Wochen)
+            weekly_html = create_weekly_trades_html(trades_list, df, symbol, days_back=14)
+            
+            # Zu Result hinzufügen für spätere HTML Report Integration
+            result['weekly_trades_html'] = weekly_html
+            result['weekly_trades_count'] = len(trades_list)
+        else:
+            print(f"⚠️ Keine Matched Trades für Weekly Display verfügbar")
+            result['weekly_trades_html'] = ""
+            result['weekly_trades_count'] = 0
         
         return result
         
@@ -1458,9 +1498,10 @@ def optimize_parameters(df, symbol):
             'method': 'fallback'
         }
 
-def simulate_matched_trades(ext_full, initial_capital, commission_rate):
+def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=None):
     """
     Simuliert Matched Trades basierend auf Extended Signals
+    Inkludiert offene Trades mit heutigem artificial price
     """
     try:
         if ext_full is None or ext_full.empty:
@@ -1469,6 +1510,7 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate):
         matched = []
         position = None
         capital = initial_capital
+        today = pd.Timestamp.now().date()
         
         for idx, row in ext_full.iterrows():
             if row['Action'] == 'buy' and position is None:
@@ -1498,520 +1540,110 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate):
                     'PnL': round(pnl, 2),
                     'Commission': round(commission, 2),
                     'Net PnL': round(net_pnl, 2),
-                    'Capital': round(capital, 2)
+                    'Capital': round(capital, 2),
+                    'Status': 'CLOSED'
                 })
                 position = None
         
-        return pd.DataFrame(matched)
-        
-    except Exception as e:
-        print(f"❌ Fehler in simulate_matched_trades: {e}")
-        return pd.DataFrame()
-
-def calculate_trade_statistics(ext_full, matched_trades, initial_capital):
-    """
-    Berechnet umfassende Trade-Statistiken
-    """
-    try:
-        stats = {}
-        
-        # Extended Signals Stats
-        if ext_full is not None and not ext_full.empty:
-            buy_signals = len(ext_full[ext_full['Action'] == 'buy'])
-            sell_signals = len(ext_full[ext_full['Action'] == 'sell'])
-            stats['📊 Total Extended Signals'] = len(ext_full)
-            stats['📈 Buy Signals'] = buy_signals
-            stats['📉 Sell Signals'] = sell_signals
-        else:
-            stats['📊 Total Extended Signals'] = 0
-            stats['📈 Buy Signals'] = 0
-            stats['📉 Sell Signals'] = 0
-        
-        # Matched Trades Stats
-        if matched_trades is not None and not matched_trades.empty:
-            total_trades = len(matched_trades)
-            winning_trades = len(matched_trades[matched_trades['Net PnL'] > 0])
-            losing_trades = len(matched_trades[matched_trades['Net PnL'] < 0])
+        # ✅ OFFENE POSITION MIT HEUTIGEM ARTIFICIAL PRICE HINZUFÜGEN
+        if position is not None and data_df is not None:
+            entry_price = position['entry_price']
+            quantity = capital / entry_price
             
-            stats['🔄 Total Completed Trades'] = total_trades
-            stats['✅ Winning Trades'] = winning_trades
-            stats['❌ Losing Trades'] = losing_trades
-            stats['📊 Win Rate'] = f"{(winning_trades/total_trades*100):.1f}%" if total_trades > 0 else "0%"
+            # Heutigen artificial price finden
+            today_timestamp = pd.Timestamp(today)
+            artificial_price = entry_price  # Fallback
             
-            if total_trades > 0:
-                total_pnl = matched_trades['Net PnL'].sum()
-                avg_win = matched_trades[matched_trades['Net PnL'] > 0]['Net PnL'].mean() if winning_trades > 0 else 0
-                avg_loss = matched_trades[matched_trades['Net PnL'] < 0]['Net PnL'].mean() if losing_trades > 0 else 0
-                final_capital = matched_trades['Capital'].iloc[-1] if len(matched_trades) > 0 else initial_capital
-                
-                stats['💰 Total PnL'] = f"€{total_pnl:.2f}"
-                stats['📈 Average Win'] = f"€{avg_win:.2f}"
-                stats['📉 Average Loss'] = f"€{avg_loss:.2f}"
-                stats['💼 Final Capital'] = f"€{final_capital:.2f}"
-                stats['📊 Total Return'] = f"{((final_capital/initial_capital-1)*100):.2f}%"
-        else:
-            stats['🔄 Total Completed Trades'] = 0
-            stats['✅ Winning Trades'] = 0
-            stats['❌ Losing Trades'] = 0
-            stats['📊 Win Rate'] = "0%"
-            stats['💰 Total PnL'] = "€0.00"
-            stats['💼 Final Capital'] = f"€{initial_capital:.2f}"
-            stats['📊 Total Return'] = "0.00%"
-        
-        return stats
-        
-    except Exception as e:
-        print(f"❌ Fehler in calculate_trade_statistics: {e}")
-        return {'Error': str(e)}
-
-def simulate_matched_trades(ext_full, initial_capital, commission_rate):
-    """
-    Simuliert Matched Trades basierend auf Extended Signals
-    """
-    try:
-        if ext_full is None or ext_full.empty:
-            return pd.DataFrame()
-        
-        matched = []
-        position = None
-        capital = initial_capital
-        
-        for idx, row in ext_full.iterrows():
-            if row['Action'] == 'buy' and position is None:
-                # Öffne Long Position
-                position = {
-                    'entry_date': row['Long Date detected'],
-                    'entry_price': row['Level Close'],
-                    'entry_idx': idx
-                }
-            elif row['Action'] == 'sell' and position is not None:
-                # Schließe Position
-                entry_price = position['entry_price']
-                exit_price = row['Level Close']
-                quantity = capital / entry_price
-                
-                pnl = (exit_price - entry_price) * quantity
-                commission = (entry_price + exit_price) * quantity * commission_rate
-                net_pnl = pnl - commission
-                capital += net_pnl
-                
-                matched.append({
-                    'Entry Date': position['entry_date'],
-                    'Entry Price': round(entry_price, 2),
-                    'Exit Date': row['Long Date detected'],
-                    'Exit Price': round(exit_price, 2),
-                    'Quantity': round(quantity, 4),
-                    'PnL': round(pnl, 2),
-                    'Commission': round(commission, 2),
-                    'Net PnL': round(net_pnl, 2),
-                    'Capital': round(capital, 2)
-                })
-                position = None
-        
-        return pd.DataFrame(matched)
-        
-    except Exception as e:
-        print(f"❌ Fehler in simulate_matched_trades: {e}")
-        return pd.DataFrame()
-
-def calculate_trade_statistics(ext_full, matched_trades, initial_capital):
-    """
-    Berechnet umfassende Trade-Statistiken
-    """
-    try:
-        stats = {}
-        
-        # Extended Signals Stats
-        if ext_full is not None and not ext_full.empty:
-            buy_signals = len(ext_full[ext_full['Action'] == 'buy'])
-            sell_signals = len(ext_full[ext_full['Action'] == 'sell'])
-            stats['📊 Total Extended Signals'] = len(ext_full)
-            stats['📈 Buy Signals'] = buy_signals
-            stats['📉 Sell Signals'] = sell_signals
-        else:
-            stats['📊 Total Extended Signals'] = 0
-            stats['📈 Buy Signals'] = 0
-            stats['📉 Sell Signals'] = 0
-        
-        # Matched Trades Stats
-        if matched_trades is not None and not matched_trades.empty:
-            total_trades = len(matched_trades)
-            winning_trades = len(matched_trades[matched_trades['Net PnL'] > 0])
-            losing_trades = len(matched_trades[matched_trades['Net PnL'] < 0])
-            
-            stats['🔄 Total Completed Trades'] = total_trades
-            stats['✅ Winning Trades'] = winning_trades
-            stats['❌ Losing Trades'] = losing_trades
-            stats['📊 Win Rate'] = f"{(winning_trades/total_trades*100):.1f}%" if total_trades > 0 else "0%"
-            
-            if total_trades > 0:
-                total_pnl = matched_trades['Net PnL'].sum()
-                avg_win = matched_trades[matched_trades['Net PnL'] > 0]['Net PnL'].mean() if winning_trades > 0 else 0
-                avg_loss = matched_trades[matched_trades['Net PnL'] < 0]['Net PnL'].mean() if losing_trades > 0 else 0
-                final_capital = matched_trades['Capital'].iloc[-1] if len(matched_trades) > 0 else initial_capital
-                
-                stats['💰 Total PnL'] = f"€{total_pnl:.2f}"
-                stats['📈 Average Win'] = f"€{avg_win:.2f}"
-                stats['📉 Average Loss'] = f"€{avg_loss:.2f}"
-                stats['💼 Final Capital'] = f"€{final_capital:.2f}"
-                stats['📊 Total Return'] = f"{((final_capital/initial_capital-1)*100):.2f}%"
-        else:
-            stats['🔄 Total Completed Trades'] = 0
-            stats['✅ Winning Trades'] = 0
-            stats['❌ Losing Trades'] = 0
-            stats['📊 Win Rate'] = "0%"
-            stats['💰 Total PnL'] = "€0.00"
-            stats['💼 Final Capital'] = f"€{initial_capital:.2f}"
-            stats['📊 Total Return'] = "0.00%"
-        
-        return stats
-        
-    except Exception as e:
-        print(f"❌ Fehler in calculate_trade_statistics: {e}")
-        return {'Error': str(e)}
-
-def add_buy_sell_markers_to_df_corrected(df_bt, matched_trades):
-    """
-    Add buy/sell markers to dataframe for plotting using CORRECT trade dates
-    FIXED: Uses actual trade dates (Date HL + trade_window) not signal detection dates
-    """
-    df_with_markers = df_bt.copy()
-    df_with_markers['buy_signal'] = None
-    df_with_markers['sell_signal'] = None
-    df_with_markers['buy_price'] = None
-    df_with_markers['sell_price'] = None
-    
-    print(f"🔍 DEBUG: Adding markers to df with {len(df_bt)} rows")
-    print(f"🔍 DEBUG: Processing {len(matched_trades)} matched trades")
-    print(f"🔍 DEBUG: df_bt index type: {type(df_bt.index)}")
-    print(f"🔍 DEBUG: df_bt date range: {df_bt.index.min()} to {df_bt.index.max()}")
-    
-    buy_markers_added = 0
-    sell_markers_added = 0
-    
-    for i, trade in enumerate(matched_trades):
-        # Process BUY marker (for all trades including open ones)
-        buy_date_str = trade.get('buy_date', '')
-        sell_date_str = trade.get('sell_date', '')
-        is_open = trade.get('is_open', False)
-        
-        print(f"   🔍 Trade {i+1}: BUY {buy_date_str} -> SELL {sell_date_str} {'(OPEN)' if is_open else ''}")
-        
-        # Process BUY marker
-        if buy_date_str:
-            try:
-                buy_date = pd.to_datetime(buy_date_str)
-                
-                # Method 1: Direct date match
-                if buy_date in df_with_markers.index:
-                    df_with_markers.loc[buy_date, 'buy_signal'] = 1
-                    df_with_markers.loc[buy_date, 'buy_price'] = trade.get('buy_price', 0)
-                    buy_markers_added += 1
-                    print(f"     ✅ BUY marker added for {buy_date.date()}")
-                else:
-                    # Method 2: Find nearest date
-                    nearest_buy_idx = df_with_markers.index.get_indexer([buy_date], method='nearest')[0]
-                    if nearest_buy_idx >= 0:
-                        nearest_buy_date = df_with_markers.index[nearest_buy_idx]
-                        df_with_markers.loc[nearest_buy_date, 'buy_signal'] = 1
-                        df_with_markers.loc[nearest_buy_date, 'buy_price'] = trade.get('buy_price', 0)
-                        buy_markers_added += 1
-                        print(f"     ✅ BUY marker added for {nearest_buy_date.date()} (nearest to {buy_date.date()})")
-                    else:
-                        print(f"     ❌ BUY date {buy_date.date()} not found")
-                        
-            except Exception as e:
-                print(f"     ❌ Error processing BUY for trade {i+1}: {e}")
-        
-        # Process SELL marker (only for completed trades)
-        if not is_open and sell_date_str:
-            try:
-                sell_date = pd.to_datetime(sell_date_str)
-                
-                # Method 1: Direct date match
-                if sell_date in df_with_markers.index:
-                    df_with_markers.loc[sell_date, 'sell_signal'] = 1
-                    df_with_markers.loc[sell_date, 'sell_price'] = trade.get('sell_price', 0)
-                    sell_markers_added += 1
-                    print(f"     ✅ SELL marker added for {sell_date.date()}")
-                else:
-                    # Method 2: Find nearest date
-                    nearest_sell_idx = df_with_markers.index.get_indexer([sell_date], method='nearest')[0]
-                    if nearest_sell_idx >= 0:
-                        nearest_sell_date = df_with_markers.index[nearest_sell_idx]
-                        df_with_markers.loc[nearest_sell_date, 'sell_signal'] = 1
-                        df_with_markers.loc[nearest_sell_date, 'sell_price'] = trade.get('sell_price', 0)
-                        sell_markers_added += 1
-                        print(f"     ✅ SELL marker added for {nearest_sell_date.date()} (nearest to {sell_date.date()})")
-                    else:
-                        print(f"     ❌ SELL date {sell_date.date()} not found")
-                        
-            except Exception as e:
-                print(f"     ❌ Error processing SELL for trade {i+1}: {e}")
-    
-    print(f"🎯 MARKERS SUMMARY: {buy_markers_added} BUY, {sell_markers_added} SELL added to dataframe")
-    
-    # Verify markers were added
-    buy_count = df_with_markers['buy_signal'].notna().sum()
-    sell_count = df_with_markers['sell_signal'].notna().sum()
-    print(f"🔍 VERIFICATION: {buy_count} BUY signals, {sell_count} SELL signals in dataframe")
-    print(f"⚠️  MARKERS USE CORRECTED TRADE DATES (Date HL + trade_window)")
-    
-    return df_with_markers
-
-# Verwende die existierenden Imports - KEINE neuen Konstanten definieren!
-
-def optimize_parameters(df, symbol):
-    """
-    Verwendet die existierende berechne_best_p_tw_long Funktion
-    """
-    # Standard Config für Optimierung
-    cfg = {
-        'initial_capital': 10000,
-        'commission_rate': COMMISSION_RATE,  # ✅ Aus config import
-        'min_commission': MIN_COMMISSION,    # ✅ Aus config import
-        'order_round_factor': ORDER_ROUND_FACTOR  # ✅ Aus config import
-    }
-    
-    # Verwende kompletten Dataset für Optimierung
-    start_idx = 0
-    end_idx = len(df)
-    
-    # Nutze existierende Funktion
-    p, tw = berechne_best_p_tw_long(  # ✅ Bereits importiert
-        df, cfg, start_idx, end_idx, verbose=True, ticker=symbol
-    )
-    
-    print(f"✅ Optimal: Past={p}, Trade={tw}")
-    
-    return {
-        'optimal_past_window': p,
-        'optimal_trade_window': tw,
-        'method': 'berechne_best_p_tw_long'
-    }
-
-def display_extended_trades_table(ext_full, symbol):
-    """
-    Zeigt Extended Trades Tabelle - VEREINFACHT
-    """
-    try:
-        if ext_full is None or ext_full.empty:
-            print(f"❌ Keine Extended Signals für {symbol}")
-            return
-        
-        # Einfache Statistik
-        total_signals = len(ext_full)
-        long_signals = len(ext_full[ext_full['Long Signal Extended'] == True]) if 'Long Signal Extended' in ext_full.columns else 0
-        
-        print(f"📊 EXTENDED SIGNALS SUMMARY - {symbol}")
-        print(f"   Total Rows: {total_signals}")
-        print(f"   Long Signals: {long_signals}")
-        print(f"   No Action Needed: {total_signals - long_signals}")
-        
-    except Exception as e:
-        print(f"❌ Fehler in display_extended_trades_table: {e}")
-
-def create_trade_statistics_text(matched_trades, initial_capital=10000):
-    """
-    Create formatted statistics text from matched trades
-    """
-    if not matched_trades:
-        return ""
-    
-    # Calculate statistics for completed trades only
-    completed_trades = [t for t in matched_trades if not t.get('is_open', False)]
-    open_trades = [t for t in matched_trades if t.get('is_open', False)]
-    
-    total_trades = len(completed_trades)
-    total_pnl = sum(trade.get('pnl', 0) for trade in completed_trades)
-    total_fees = sum(trade.get('total_fees', 0) for trade in completed_trades)
-    winning_trades = sum(1 for trade in completed_trades if trade.get('pnl', 0) > 0)
-    losing_trades = total_trades - winning_trades
-    
-    win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-    final_capital = initial_capital + total_pnl
-    total_return = ((final_capital - initial_capital) / initial_capital * 100) if initial_capital > 0 else 0
-    
-    avg_pnl = total_pnl / total_trades if total_trades > 0 else 0
-    max_pnl = max((trade.get('pnl', 0) for trade in completed_trades), default=0)
-    min_pnl = min((trade.get('pnl', 0) for trade in completed_trades), default=0)
-    
-    # Format statistics text
-    stats_text = f"""Total Completed Trades: {total_trades}
-Open Positions: {len(open_trades)}
-Winning Trades: {winning_trades}
-Losing Trades: {losing_trades}
-Win Rate: {win_rate:.1f}%
-Total PnL: {total_pnl:.2f}
-Total Fees: {total_fees:.2f}
-Total Return: {total_return:.2f}%
-Average PnL: {avg_pnl:.2f}
-Max Win: {max_pnl:.2f}
-Max Loss: {min_pnl:.2f}
-Initial Capital: {initial_capital:.2f}
-Final Capital: {final_capital:.2f}"""
-    
-    return stats_text
-
-def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_bt):
-    """
-    Create equity curve from matched trades
-    FIXED: Proper equity tracking with open positions
-    """
-    if not matched_trades or df_bt.empty:
-        return [initial_capital] * len(df_bt)
-    
-    equity_curve = []
-    current_capital = initial_capital
-    position_shares = 0
-    position_price = 0
-    trade_index = 0
-    
-    print(f"🔍 Creating equity curve from {len(matched_trades)} trades over {len(df_bt)} days")
-    
-    for date in df_bt.index:
-        date_str = date.strftime('%Y-%m-%d')
-        
-        # Check for buy signal
-        while trade_index < len(matched_trades):
-            trade = matched_trades[trade_index]
-            buy_date_str = trade.get('buy_date', '')
-            
-            if buy_date_str == date_str and position_shares == 0:
-                position_shares = trade.get('shares', 0)
-                position_price = trade.get('buy_price', 0)
-                # Subtract invested amount and fees
-                investment = position_shares * position_price
-                buy_fees = trade.get('buy_commission', 0)
-                current_capital -= (investment + buy_fees)
-                print(f"   📈 BUY on {date_str}: {position_shares:.6f} @ {position_price:.4f}, Capital: {current_capital:.2f}")
-                break
-            elif buy_date_str < date_str:
-                trade_index += 1
+            if today_timestamp in data_df.index:
+                artificial_price = data_df.loc[today_timestamp, 'Close']
+                print(f"🤖 Offene Position: Heute's artificial price = €{artificial_price:.4f}")
             else:
-                break
-        
-        # Check for sell signal
-        for i, trade in enumerate(matched_trades):
-            sell_date_str = trade.get('sell_date', '')
-            is_open = trade.get('is_open', False)
+                # Letzter verfügbarer Preis
+                artificial_price = data_df['Close'].iloc[-1]
+                print(f"🤖 Offene Position: Letzter verfügbarer Preis = €{artificial_price:.4f}")
             
-            if sell_date_str == date_str and position_shares > 0 and not is_open:
-                sell_price = trade.get('sell_price', 0)
-                sell_proceeds = position_shares * sell_price
-                sell_fees = trade.get('sell_commission', 0)
-                current_capital += (sell_proceeds - sell_fees)
-                
-                print(f"   💰 SELL on {date_str}: {position_shares:.6f} @ {sell_price:.4f}, PnL: {trade.get('pnl', 0):.2f}, Capital: {current_capital:.2f}")
-                
-                position_shares = 0
-                position_price = 0
-                break
+            # Unrealized PnL berechnen
+            unrealized_pnl = (artificial_price - entry_price) * quantity
+            
+            matched.append({
+                'Entry Date': position['entry_date'],
+                'Entry Price': round(entry_price, 2),
+                'Exit Date': today.strftime('%Y-%m-%d'),
+                'Exit Price': round(artificial_price, 2),
+                'Quantity': round(quantity, 4),
+                'PnL': round(unrealized_pnl, 2),
+                'Commission': round(entry_price * quantity * commission_rate, 2),
+                'Net PnL': round(unrealized_pnl - (entry_price * quantity * commission_rate), 2),
+                'Capital': round(capital + unrealized_pnl, 2),
+                'Status': 'OPEN',
+                'Type': 'Artificial'
+            })
+            print(f"🔓 Offener Trade hinzugefügt: Entry={entry_price:.2f}, Current={artificial_price:.2f}, PnL={unrealized_pnl:.2f}")
         
-        # Calculate current equity
-        if position_shares > 0:
-            current_price = df_bt.loc[date, 'Close']
-            unrealized_value = position_shares * current_price
-            equity = current_capital + unrealized_value
+        return pd.DataFrame(matched)
+        
+    except Exception as e:
+        print(f"❌ Fehler in simulate_matched_trades: {e}")
+        return pd.DataFrame()
+
+def calculate_trade_statistics(ext_full, matched_trades, initial_capital):
+    """
+    Berechnet umfassende Trade-Statistiken
+    """
+    try:
+        stats = {}
+        
+        # Extended Signals Stats
+        if ext_full is not None and not ext_full.empty:
+            buy_signals = len(ext_full[ext_full['Action'] == 'buy'])
+            sell_signals = len(ext_full[ext_full['Action'] == 'sell'])
+            stats['📊 Total Extended Signals'] = len(ext_full)
+            stats['📈 Buy Signals'] = buy_signals
+            stats['📉 Sell Signals'] = sell_signals
         else:
-            equity = current_capital
+            stats['📊 Total Extended Signals'] = 0
+            stats['📈 Buy Signals'] = 0
+            stats['📉 Sell Signals'] = 0
         
-        equity_curve.append(equity)
-    
-    print(f"   📊 Equity curve: Start={equity_curve[0]:.2f}, End={equity_curve[-1]:.2f}")
-    return equity_curve
-
-# REMOVE the duplicate functions at the bottom and keep only these corrected versions:
-
-def add_buy_sell_markers_to_df_corrected(df_bt, matched_trades):
-    """
-    Add buy/sell markers to dataframe for plotting using CORRECT trade dates
-    FIXED: Uses actual trade dates (Date HL + trade_window) not signal detection dates
-    """
-    df_with_markers = df_bt.copy()
-    df_with_markers['buy_signal'] = None
-    df_with_markers['sell_signal'] = None
-    df_with_markers['buy_price'] = None
-    df_with_markers['sell_price'] = None
-    
-    print(f"🔍 DEBUG: Adding markers to df with {len(df_bt)} rows")
-    print(f"🔍 DEBUG: Processing {len(matched_trades)} matched trades")
-    print(f"🔍 DEBUG: df_bt index type: {type(df_bt.index)}")
-    print(f"🔍 DEBUG: df_bt date range: {df_bt.index.min()} to {df_bt.index.max()}")
-    
-    buy_markers_added = 0
-    sell_markers_added = 0
-    
-    for i, trade in enumerate(matched_trades):
-        # Process BUY marker (for all trades including open ones)
-        buy_date_str = trade.get('buy_date', '')
-        sell_date_str = trade.get('sell_date', '')
-        is_open = trade.get('is_open', False)
-        
-        print(f"   🔍 Trade {i+1}: BUY {buy_date_str} -> SELL {sell_date_str} {'(OPEN)' if is_open else ''}")
-        
-        # Process BUY marker
-        if buy_date_str:
-            try:
-                buy_date = pd.to_datetime(buy_date_str)
+        # Matched Trades Stats
+        if matched_trades is not None and not matched_trades.empty:
+            total_trades = len(matched_trades)
+            winning_trades = len(matched_trades[matched_trades['Net PnL'] > 0])
+            losing_trades = len(matched_trades[matched_trades['Net PnL'] < 0])
+            
+            stats['🔄 Total Completed Trades'] = total_trades
+            stats['✅ Winning Trades'] = winning_trades
+            stats['❌ Losing Trades'] = losing_trades
+            stats['📊 Win Rate'] = f"{(winning_trades/total_trades*100):.1f}%" if total_trades > 0 else "0%"
+            
+            if total_trades > 0:
+                total_pnl = matched_trades['Net PnL'].sum()
+                avg_win = matched_trades[matched_trades['Net PnL'] > 0]['Net PnL'].mean() if winning_trades > 0 else 0
+                avg_loss = matched_trades[matched_trades['Net PnL'] < 0]['Net PnL'].mean() if losing_trades > 0 else 0
+                final_capital = matched_trades['Capital'].iloc[-1] if len(matched_trades) > 0 else initial_capital
                 
-                # Method 1: Direct date match
-                if buy_date in df_with_markers.index:
-                    df_with_markers.loc[buy_date, 'buy_signal'] = 1
-                    df_with_markers.loc[buy_date, 'buy_price'] = trade.get('buy_price', 0)
-                    buy_markers_added += 1
-                    print(f"     ✅ BUY marker added for {buy_date.date()}")
-                else:
-                    # Method 2: Find nearest date
-                    nearest_buy_idx = df_with_markers.index.get_indexer([buy_date], method='nearest')[0]
-                    if nearest_buy_idx >= 0:
-                        nearest_buy_date = df_with_markers.index[nearest_buy_idx]
-                        df_with_markers.loc[nearest_buy_date, 'buy_signal'] = 1
-                        df_with_markers.loc[nearest_buy_date, 'buy_price'] = trade.get('buy_price', 0)
-                        buy_markers_added += 1
-                        print(f"     ✅ BUY marker added for {nearest_buy_date.date()} (nearest to {buy_date.date()})")
-                    else:
-                        print(f"     ❌ BUY date {buy_date.date()} not found")
-                        
-            except Exception as e:
-                print(f"     ❌ Error processing BUY for trade {i+1}: {e}")
+                stats['💰 Total PnL'] = f"€{total_pnl:.2f}"
+                stats['📈 Average Win'] = f"€{avg_win:.2f}"
+                stats['📉 Average Loss'] = f"€{avg_loss:.2f}"
+                stats['💼 Final Capital'] = f"€{final_capital:.2f}"
+                stats['📊 Total Return'] = f"{((final_capital/initial_capital-1)*100):.2f}%"
+        else:
+            stats['🔄 Total Completed Trades'] = 0
+            stats['✅ Winning Trades'] = 0
+            stats['❌ Losing Trades'] = 0
+            stats['📊 Win Rate'] = "0%"
+            stats['💰 Total PnL'] = "€0.00"
+            stats['💼 Final Capital'] = f"€{initial_capital:.2f}"
+            stats['📊 Total Return'] = "0.00%"
         
-        # Process SELL marker (only for completed trades)
-        if not is_open and sell_date_str:
-            try:
-                sell_date = pd.to_datetime(sell_date_str)
-                
-                # Method 1: Direct date match
-                if sell_date in df_with_markers.index:
-                    df_with_markers.loc[sell_date, 'sell_signal'] = 1
-                    df_with_markers.loc[sell_date, 'sell_price'] = trade.get('sell_price', 0)
-                    sell_markers_added += 1
-                    print(f"     ✅ SELL marker added for {sell_date.date()}")
-                else:
-                    # Method 2: Find nearest date
-                    nearest_sell_idx = df_with_markers.index.get_indexer([sell_date], method='nearest')[0]
-                    if nearest_sell_idx >= 0:
-                        nearest_sell_date = df_with_markers.index[nearest_sell_idx]
-                        df_with_markers.loc[nearest_sell_date, 'sell_signal'] = 1
-                        df_with_markers.loc[nearest_sell_date, 'sell_price'] = trade.get('sell_price', 0)
-                        sell_markers_added += 1
-                        print(f"     ✅ SELL marker added for {nearest_sell_date.date()} (nearest to {sell_date.date()})")
-                    else:
-                        print(f"     ❌ SELL date {sell_date.date()} not found")
-                        
-            except Exception as e:
-                print(f"     ❌ Error processing SELL for trade {i+1}: {e}")
-    
-    print(f"🎯 MARKERS SUMMARY: {buy_markers_added} BUY, {sell_markers_added} SELL added to dataframe")
-    
-    # Verify markers were added
-    buy_count = df_with_markers['buy_signal'].notna().sum()
-    sell_count = df_with_markers['sell_signal'].notna().sum()
-    print(f"🔍 VERIFICATION: {buy_count} BUY signals, {sell_count} SELL signals in dataframe")
-    print(f"⚠️  MARKERS USE CORRECTED TRADE DATES (Date HL + trade_window)")
-    
-    return df_with_markers
+        return stats
+        
+    except Exception as e:
+        print(f"❌ Fehler in calculate_trade_statistics: {e}")
+        return {'Error': str(e)}
 
+# REMOVE DUPLICATE FUNCTIONS BELOW THIS POINT
+# The corrected functions are already defined above
 
 # ✅ FIX 3: Main-Block korrigieren
 if __name__ == "__main__":
@@ -2021,7 +1653,6 @@ if __name__ == "__main__":
     print(f"📊 Configuration:")
     print(f"   Backtest Period: {backtest_years} Jahr(e)")
     print(f"   Commission Rate: {COMMISSION_RATE*100}%")
-    print(f"   Trading Mode: {TRADING_MODE}")
     
     # Crypto Tickers anzeigen
     print(f"\n💰 CRYPTO TICKERS CONFIGURED ({len(crypto_tickers)}):")
@@ -2050,8 +1681,6 @@ if __name__ == "__main__":
         print("="*80)
         print(f"   📅 Session Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"   📊 Configuration: {backtest_years} years")
-        print(f"   💼 Trading Mode: {TRADING_MODE}")
-        print(f"   📁 Data Path: {CSV_PATH}")
         print("="*80)
         print("🚀 Thank you for using Crypto Backtesting Suite!")
         print("="*80)
