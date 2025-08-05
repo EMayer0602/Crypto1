@@ -4,10 +4,11 @@ gitignore
 
 # ... außer .py-Dateien (Achtung: nur im Hauptverzeichnis!)
 !*.py
-.pyc
+*.pyc
 # ... außer .gitignore selbst
 !.gitignore
 
 # Optional: Auch .py-Dateien aus Unterordnern erlauben (empfohlen)
 !**/*.py
 **/*.pyc
+*_pycache/*.pyc

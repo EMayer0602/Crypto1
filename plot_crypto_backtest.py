@@ -15,6 +15,15 @@ def plot_crypto_backtest(df, signals, trades, symbol):
                 bottom=df["Open"].iloc[i], color=color, width=width, alpha=0.8)
 
     # Support/Resistance
+    def calculate_support_resistance(df, window=5, prominence=1):
+        # Simple support/resistance calculation using rolling min/max
+        support = df['Low'].rolling(window=window, center=True).min()
+        resistance = df['High'].rolling(window=window, center=True).max()
+        # Filter to only keep local minima/maxima as support/resistance
+        support_points = support[(df['Low'] == support) & (support.notna())]
+        resistance_points = resistance[(df['High'] == resistance) & (resistance.notna())]
+        return support_points, resistance_points
+
     supp, res = calculate_support_resistance(df, 5, 1)
     ax1.scatter(supp.index, supp.values, label="Support", color="limegreen", s=80, marker="o")
     ax1.scatter(res.index, res.values, label="Resistance", color="red", s=80, marker="x")

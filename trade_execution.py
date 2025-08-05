@@ -3,6 +3,7 @@ import os
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import requests
 from datetime import datetime
 from config import COMMISSION_RATE, MIN_COMMISSION
 
@@ -29,11 +30,14 @@ def execute_trade(symbol: str,
                   action: str,
                   quantity: float,
                   limit_price: float = None,
-                  cash_balance: float = 10000.0) -> dict:
+                  cash_balance: float = 10000.0,
+                  portfolio: dict = None) -> dict:
     """
     Simuliert einen Trade (buy/sell) mit Preisabfrage & Gebührenberechnung.
     Gibt ein Transaktionsobjekt zurück.
     """
+    if portfolio is None:
+        portfolio = {}
 
     spot = get_live_price(symbol)
     if spot is None:

@@ -75,90 +75,137 @@ def load_crypto_data_yf(symbol, days=365, cache_dir="data_cache"):
     return df if not df.empty else None
 '''
 
+def backtest_single_ticker(cfg, symbol):
+    import pandas as pd
 
-
-def backtest_single_ticker(ticker, cfg, days=365):
-    df = load_crypto_data_yf(cfg["symbol"], days=days)
-    print(df.head())
-    print(df.index.min(), "→", df.index.max())
-    if df is None or df.empty:
-        cache_file = os.path.join("data_cache", f"{cfg['symbol']}_{days}d.csv")
-        if os.path.exists(cache_file):
-            os.remove(cache_file)
-            print(f"[CACHE] Gelöscht: {cache_file} – beim nächsten Lauf wird neu geladen")
-        print(f"{ticker}: Keine Daten verfügbar – überspringe Ticker")
-        return
-
-
-    df = df.sort_index()
-
-    df.index = pd.to_datetime(df.index)
-    if df is None:
-        print(f"{ticker}: Keine Daten verfügbar – überspringe Ticker")
-        return
-
+    # Daten laden
+    df = load_crypto_data_yf(symbol)
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-        print(f"[LOADER] Spalten abgeflacht: {list(df.columns)}")
+        df.columns = [col[1].capitalize() for col in df.columns]
 
-    if df is None: 
-        print(f"{ticker}: keine Daten."); return
+    # Backtest-Zeitraum filtern (letzte N Jahre)
+    backtest_years = cfg.get("backtest_years", [1])
+    years = backtest_years[-1] if isinstance(backtest_years, list) else backtest_years
+    end_date = df.index.max()
+    start_date = end_date - pd.DateOffset(years=years)
+    df_bt = df[(df.index >= start_date) & (df.index <= end_date)]
 
-    # 1) Param-Optimierung
-    p, tw = berechne_best_p_tw_long(df, cfg, backtesting_begin, backtesting_end)
+    # Prozentwerte für Start/Ende aus Konfiguration
+    start_percent = cfg.get("backtest_start_percent", 0.25)
+    end_percent = cfg.get("backtest_end_percent", 0.95)
+    n = len(df_bt.index)
+    start_idx = int(n * start_percent)
+    end_idx = int(n * end_percent)
+    start_idx = max(0, min(start_idx, n - 1))
+    end_idx = max(0, min(end_idx, n - 1))
 
-    # 2) Signale generieren
-    supp, res = calculate_support_resistance(df, p, tw)
-    std  = assign_long_signals(supp, res, df, tw, "1d")
-    ext  = assign_long_signals_extended(supp, res, df, tw, "1d")
-    ext  = update_level_close_long(ext, df)
-
-    # 3) Simulation
-    cap, trades = simulate_trades_compound_extended(
-        ext, df,
-        starting_capital=cfg["initialCapitalLong"],
-        commission_rate=COMMISSION_RATE,
-        min_commission=MIN_COMMISSION,
-        round_factor=cfg["order_round_factor"]
+    # Parameter-Optimierung
+    p, tw = berechne_best_p_tw_long(
+        df_bt, cfg,
+        start_idx, end_idx,
+        verbose=False,
+        ticker=symbol
     )
-    print(f"{ticker}: Final Capital = {cap:.2f} €")
-    ext.to_csv(f"extended_{ticker}.csv", index=False)
-    pd.DataFrame(trades).to_csv(f"trades_{ticker}.csv", index=False)
 
-    # 4) Equity-Kurve
-    close_arr = df["Close"].to_numpy(dtype=float)
-    dates     = df.index
-    eq_curve  = []
-    cash      = cfg["initialCapitalLong"]
-    pos, entry = 0, 0
-    ti = 0
+    # Support/Resistance
+    supp_bt, res_bt = calculate_support_resistance(df_bt, p, tw, verbose=False, ticker=symbol)
 
-    for i, date in enumerate(dates):
-        price = close_arr[i]
-        # buy?
-        if ti < len(trades) and pd.to_datetime(trades[ti]["buy_date"])==date:
-            pos   = trades[ti]["shares"]
-            entry = trades[ti]["buy_price"]
-        # sell?
-        if ti < len(trades) and pd.to_datetime(trades[ti]["sell_date"])==date:
-            cash += trades[ti]["pnl"]
-            pos, entry = 0, 0
-            ti += 1
-        eq_curve.append(cash + pos*(price-entry) if pos>0 else cash)
+    # Signale
+    std_bt = assign_long_signals(supp_bt, res_bt, df_bt, tw, "1d")
+    ext_bt = assign_long_signals_extended(supp_bt, res_bt, df_bt, tw, "1d")
+    ext_bt = update_level_close_long(ext_bt, df_bt)
 
-    # 5) Buy & Hold
-    try:
-        start = close_arr[0]
-    except:
-        start = 1.0
-    bh_curve = [(cfg["initialCapitalLong"]*(p/start)) for p in close_arr]
+    # Trades simulieren
+    cap_bt, trades_bt = simulate_trades_compound_extended(
+        ext_bt, df_bt, cfg,
+        starting_capital=cfg.get("initialCapitalLong", 10000),
+        commission_rate=cfg.get("commission_rate", 0.001),
+        min_commission=cfg.get("min_commission", 1.0),
+        round_factor=cfg.get("order_round_factor", 1)
+    )
 
-    # 6) Plot
+    # Buy & Hold-Kurve
+    bh_curve_bt = [cfg.get("initialCapitalLong", 10000) * (p / df_bt["Close"].iloc[0]) for p in df_bt["Close"]]
+
+    # Plot
     plot_combined_chart_and_equity(
-        df, std, pd.DataFrame(), supp, res, compute_trend(df),
-        eq_curve, [], bh_curve, ticker
+        df_bt,
+        std_bt,
+        supp_bt,
+        res_bt,
+        trades_bt,
+        bh_curve_bt,
+        symbol,
+        initial_capital=cfg.get("initialCapitalLong", 10000),
+        backtest_years=backtest_years
     )
 
+    return cap_bt, trades_bt, std_bt, supp_bt, res_bt, bh_curve_bt
+    import pandas as pd
+
+    # Daten laden
+    df = load_crypto_data_yf(symbol)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[1].capitalize() for col in df.columns]
+
+    # Backtest-Zeitraum filtern (letzte N Jahre)
+    backtest_years = cfg.get("backtest_years", [1])
+    years = backtest_years[-1] if isinstance(backtest_years, list) else backtest_years
+    end_date = df.index.max()
+    start_date = end_date - pd.DateOffset(years=years)
+    df_bt = df[(df.index >= start_date) & (df.index <= end_date)]
+
+    # Prozentwerte für Start/Ende aus Konfiguration
+    start_percent = cfg.get("backtest_start_percent", 0.25)
+    end_percent = cfg.get("backtest_end_percent", 0.95)
+    n = len(df_bt.index)
+    start_idx = int(n * start_percent)
+    end_idx = int(n * end_percent)
+    start_idx = max(0, min(start_idx, n - 1))
+    end_idx = max(0, min(end_idx, n - 1))
+
+    # Parameter-Optimierung
+    p, tw = berechne_best_p_tw_long(
+        df_bt, cfg,
+        start_idx, end_idx,
+        verbose=False,
+        ticker=symbol
+    )
+
+    # Support/Resistance
+    supp_bt, res_bt = calculate_support_resistance(df_bt, p, tw, verbose=False, ticker=symbol)
+
+    # Signale
+    std_bt = assign_long_signals(supp_bt, res_bt, df_bt, tw, "1d")
+    ext_bt = assign_long_signals_extended(supp_bt, res_bt, df_bt, tw, "1d")
+    ext_bt = update_level_close_long(ext_bt, df_bt)
+
+    # Trades simulieren
+    cap_bt, trades_bt = simulate_trades_compound_extended(
+        ext_bt, df_bt, cfg,
+        starting_capital=cfg.get("initialCapitalLong", 10000),
+        commission_rate=cfg.get("commission_rate", 0.001),
+        min_commission=cfg.get("min_commission", 1.0),
+        round_factor=cfg.get("order_round_factor", 1)
+    )
+
+    # Buy & Hold-Kurve
+    bh_curve_bt = [cfg.get("initialCapitalLong", 10000) * (p / df_bt["Close"].iloc[0]) for p in df_bt["Close"]]
+
+    # Plot
+    plotly_combined_chart_and_equity(
+        df_bt,
+        std_bt,
+        supp_bt,
+        res_bt,
+        trades_bt,
+        bh_curve_bt,
+        symbol,
+        initial_capital=cfg.get("initialCapitalLong", 10000),
+        backtest_years=backtest_years
+    )
+
+    return cap_bt, trades_bt, std_bt, supp_bt, res_bt, bh_curve_bt
 def run_crypto_backtests(days=365):
     for symbol, cfg in crypto_tickers.items():
         print(f"\n=== Backtest für {symbol} ===")
