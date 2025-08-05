@@ -1,3 +1,4 @@
+Ctrl + Tab - Zwischen offenen Dateien
 '''
 HIER SIND DIE KEYBOARD SHORTCUTS FÜR COPILOT CHAT SCROLLING:
 
@@ -29,7 +30,6 @@ Ctrl + Shift + X - Extensions
 Ctrl + J - Toggle Terminal Panel
 Editor Navigation:
 
-Ctrl + Tab - Zwischen offenen Dateien
 Alt + ← / Alt + → - Vorwärts/Rückwärts navigieren
 Ctrl + P - Quick Open
 🔧 COPILOT PANEL SHORTCUTS:
