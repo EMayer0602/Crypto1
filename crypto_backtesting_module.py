@@ -12,23 +12,25 @@ import time
 from trade_execution import prepare_orders_from_trades, execute_trade, submit_order_bitpanda, save_all_orders_html_report
 from config import COMMISSION_RATE, MIN_COMMISSION, ORDER_ROUND_FACTOR, backtesting_begin, backtesting_end, backtest_years
 from crypto_tickers import crypto_tickers
-# TEMPORARILY COMMENTED OUT - signal_utils.py not found
-# from signal_utils import (
-#     calculate_support_resistance,
-#     compute_trend,
-#     assign_long_signals,
-#     assign_long_signals_extended,
-#     update_level_close_long,
-#     simulate_trades_compound_extended,
-#     berechne_best_p_tw_long,
-#     plot_combined_chart_and_equity
-# )
+from signal_utils import (
+    calculate_support_resistance,
+    compute_trend,
+    assign_long_signals,
+    assign_long_signals_extended,
+    update_level_close_long,
+    berechne_best_p_tw_long,
+    plot_combined_chart_and_equity,
+    calculate_shares
+)
+# Importiere die richtige simulate_trades_compound_extended Funktion
+from MultiTradingIB25D_crypto import simulate_trades_compound_extended
 # Am Anfang der Datei bei den anderen Imports hinzufügen:
 from trades_weekly_display import display_weekly_trades_console, create_weekly_trades_html
 
 # FIXED: Remove non-existent function
 from plotly_utils import (
     plotly_combined_chart_and_equity,
+    display_extended_trades_table,
     format_trading_tables,
     create_trades_dataframe,
     print_statistics_table
@@ -315,7 +317,7 @@ def main_backtest_with_analysis():
         print("🚀 Starting Enhanced Backtest Analysis...")
         print(f"📅 Backtest Period: {backtest_years} years")
         print(f"🎯 Optimization Range: 25% - 95%")
-        print(f"💰 Initial Capital: €10000")
+        print(f"💰 Initial Capital: Individual per ticker")
         
         all_results = {}
         successful_symbols = []
@@ -365,7 +367,7 @@ def main_backtest_with_analysis():
         
         for symbol, result in all_results.items():
             if isinstance(result, dict) and 'config' in result:
-                initial_cap = result['config'].get('initial_capital', 10000)
+                initial_cap = result['config'].get('initialCapitalLong', 10000)
                 total_initial_capital += initial_cap
                 
                 if 'trade_statistics' in result:
@@ -499,7 +501,7 @@ def main_backtest_with_analysis():
                             continue
                 
                 # ✅ EQUITY CURVES BERECHNUNG
-                initial_capital = result.get('config', {}).get('initial_capital', 10000)
+                initial_capital = result.get('config', {}).get('initialCapitalLong', 10000)
                 
                 # 1. Strategy Equity Curve aus matched_trades
                 if not matched_trades.empty:
@@ -849,11 +851,13 @@ def backtest_single_ticker(cfg, symbol):
     end_idx = max(0, min(end_idx, n - 1))
 
     # Parameter-Optimierung
+    trade_on = cfg.get('trade_on', 'Close')  # Hole trade_on aus config
     p, tw = berechne_best_p_tw_long(
         df_bt, cfg,
         start_idx, end_idx,
         verbose=False,
-        ticker=symbol
+        ticker=symbol,
+        trade_on=trade_on
     )
 
     # Support/Resistance
@@ -861,7 +865,9 @@ def backtest_single_ticker(cfg, symbol):
 
     # Signale
     std_bt = assign_long_signals(supp_bt, res_bt, df_bt, tw, "1d")
-    ext_bt = assign_long_signals_extended(supp_bt, res_bt, df_bt, tw, "1d")
+    ext_bt = assign_long_signals_extended(supp_bt, res_bt, df_bt, tw, "1d", trade_on, 
+                                         cfg.get("initialCapitalLong", 10000), 
+                                         cfg.get("order_round_factor", 1))
     ext_bt = update_level_close_long(ext_bt, df_bt)
 
     # Trades simulieren
@@ -1318,7 +1324,7 @@ def run_backtest(symbol, config):
     """
     try:
         # Konfiguration extrahieren
-        initial_capital = config.get('initial_capital', 10000)
+        initial_capital = config.get('initialCapitalLong', 10000)
         trade_on = config.get('trade_on', 'close').lower()
         order_round_factor = config.get('order_round_factor', 0.01)
         commission_rate = config.get('commission_rate', 0.0018)
@@ -1347,7 +1353,7 @@ def run_backtest(symbol, config):
         
         # Support/Resistance berechnen mit Backtesting für optimale Parameter
         print(f"\n📊 Optimiere Parameter für {symbol}...")
-        optimal_results = optimize_parameters(df, symbol)  # ✅ df ist hier definiert
+        optimal_results = optimize_parameters(df, symbol, config)  # ✅ config übergeben
         
         optimal_past_window = optimal_results.get('optimal_past_window', 0)
         optimal_trade_window = optimal_results.get('optimal_trade_window', 2)
@@ -1366,7 +1372,11 @@ def run_backtest(symbol, config):
         
         # Extended Signals generieren
         print(f"\n📊 Generiere Extended Signals für {symbol}...")
-        ext_full = assign_long_signals_extended(supp_full, res_full, df, optimal_trade_window, "1d")
+        trade_on = config.get('trade_on', 'Close')  # Hole trade_on aus config
+        initial_capital = config.get('initialCapitalLong', 10000)
+        order_round_factor = config.get('order_round_factor', 1)
+        ext_full = assign_long_signals_extended(supp_full, res_full, df, optimal_trade_window, "1d", 
+                                              trade_on, initial_capital, order_round_factor)
         
         if ext_full is None or ext_full.empty:
             print(f"❌ Keine Extended Signals für {symbol}")
@@ -1388,7 +1398,7 @@ def run_backtest(symbol, config):
         # 4. MATCHED TRADES - SIMULATION (mit offenen Trades)
         print(f"\n📊 4. MATCHED TRADES - SIMULATION - {symbol}")
         print("="*120)
-        matched_trades = simulate_matched_trades(ext_full, initial_capital, commission_rate, df)
+        matched_trades = simulate_matched_trades(ext_full, initial_capital, commission_rate, df, order_round_factor)
         if not matched_trades.empty:
             print(matched_trades.to_string(index=True, max_rows=None))
         else:
@@ -1401,8 +1411,8 @@ def run_backtest(symbol, config):
         for key, value in trade_stats.items():
             print(f"   {key}: {value}")
         
-        # Tabelle anzeigen
-        display_extended_trades_table(ext_full, symbol)
+        # Tabelle anzeigen - ENTFERNT: display_extended_trades_table(ext_full, symbol)
+        # Das würde eine doppelte Tabelle erzeugen
         
         # Result erstellen BEVOR Weekly Trades
         result = {
@@ -1410,6 +1420,11 @@ def run_backtest(symbol, config):
             'symbol': symbol,
             'config': config,
             'df_bt': df,
+            # ✅ HINZUGEFÜGT: Optimierungsergebnisse
+            'optimal_past_window': optimal_results.get('optimal_past_window', 'N/A'),
+            'optimal_trade_window': optimal_results.get('optimal_trade_window', 'N/A'),
+            'optimal_pnl': optimal_results.get('optimal_pnl', 'N/A'),
+            'optimization_success': optimal_results.get('optimization_success', False),
             'dataset_info': {
                 'total_days': len(df),
                 'start_date': df.index[0].date(),
@@ -1426,28 +1441,33 @@ def run_backtest(symbol, config):
             'resistance_levels': len(res_full)
         }
         
-        # ✅ WEEKLY TRADES ANZEIGE HINZUFÜGEN (2 Wochen)
-        print(f"\n🔄 Zeige Weekly Trades für {symbol} (letzte 2 Wochen)...")
-        if matched_trades is not None and not matched_trades.empty:
-            # Convert DataFrame to list of dicts for the display function
-            trades_list = []
-            for _, trade_row in matched_trades.iterrows():
-                trade_dict = trade_row.to_dict()
-                trades_list.append(trade_dict)
-            
-            # Console Display für Weekly Trades (14 Tage = 2 Wochen)
-            display_weekly_trades_console(trades_list, df, symbol, days_back=14)
-            
-            # HTML Content für Weekly Trades erstellen (14 Tage = 2 Wochen)
-            weekly_html = create_weekly_trades_html(trades_list, df, symbol, days_back=14)
-            
-            # Zu Result hinzufügen für spätere HTML Report Integration
-            result['weekly_trades_html'] = weekly_html
-            result['weekly_trades_count'] = len(trades_list)
-        else:
-            print(f"⚠️ Keine Matched Trades für Weekly Display verfügbar")
-            result['weekly_trades_html'] = ""
-            result['weekly_trades_count'] = 0
+                # ✅ EXTENDED TRADES LISTE DER LETZTEN 2 WOCHEN (zurück zu ext_signals)
+        print(f"\n📅 TRADES DER LETZTEN 2 WOCHEN - {symbol}")
+        print("="*80)
+        
+        # Echtes Datum-Filter für die letzten 2 Wochen
+        from datetime import datetime, timedelta
+        from weekly_trades_processor import process_weekly_extended_trades
+        
+        latest_date = df.index.max()
+        cutoff_date = latest_date - timedelta(days=14)
+        
+        # Verarbeite Extended Trades der letzten 2 Wochen
+        weekly_result = process_weekly_extended_trades(ext_full, df, symbol, config, cutoff_date)
+        
+        # Setze Results
+        result['weekly_trades_html'] = weekly_result['weekly_trades_html']
+        result['weekly_trades_count'] = weekly_result['weekly_trades_count'] 
+        result['weekly_trades_data'] = weekly_result['weekly_trades_data']
+        
+        # Füge Optimierungsparameter hinzu
+        result['optimal_past_window'] = optimal_past_window
+        result['optimal_trade_window'] = optimal_trade_window
+        result['optimal_pnl'] = optimal_results.get('optimal_pnl', None)
+        result['optimization_success'] = optimal_results.get('optimization_success', False)
+        result['method'] = optimal_results.get('method', 'unknown')
+        
+        print("-" * 80)
         
         return result
         
@@ -1457,37 +1477,65 @@ def run_backtest(symbol, config):
         traceback.print_exc()
         return False
 
-def optimize_parameters(df, symbol):
+def optimize_parameters(df, symbol, config=None):
     """
     Verwendet die existierende berechne_best_p_tw_long Funktion
     """
     try:
         print(f"🔍 Optimiere Parameter für {symbol}...")
         
-        # Standard Config für Optimierung
+        # Standard Config für Optimierung - WIRD von übergebener config überschrieben
         cfg = {
-            'initial_capital': 10000,
+            'initialCapitalLong': 10000,  # Default - wird von config überschrieben
             'commission_rate': 0.0018,
             'min_commission': 1.0,
             'order_round_factor': 0.01
         }
+        
+        # Update mit übergebener config falls vorhanden (überschreibt initial_capital!)
+        if config:
+            cfg.update(config)
         
         # Verwende kompletten Dataset für Optimierung
         start_idx = 0
         end_idx = len(df)
         
         # Nutze deine existierende Optimierungsfunktion
-        p, tw = berechne_best_p_tw_long(  # ✅ p, tw statt optimal_past_window, optimal_trade_window
-            df, cfg, start_idx, end_idx, verbose=True, ticker=symbol
-        )
+        trade_on = cfg.get('trade_on', 'Close')  # Hole trade_on aus cfg (nicht config)
+        try:
+            p, tw, best_final_cap = berechne_best_p_tw_long(  # ✅ Erweiterte Rückgabe
+                df, cfg, start_idx, end_idx, verbose=True, ticker=symbol, trade_on=trade_on
+            )
+            print(f"🔍 DEBUG: Got p={p}, tw={tw}, best_final_cap={best_final_cap}")
+        except ValueError:
+            # Fallback für alte Rückgabe-Format (nur p, tw)
+            print("🔍 DEBUG: Fallback auf alte Rückgabe (p, tw)")
+            p, tw = berechne_best_p_tw_long(
+                df, cfg, start_idx, end_idx, verbose=True, ticker=symbol, trade_on=trade_on
+            )
+            best_final_cap = None
         
-        print(f"✅ Optimal: Past={p}, Trade={tw}")
+        # Berechne PnL aus final_cap
+        if best_final_cap is not None:
+            initial_capital = cfg.get('initialCapitalLong', 10000)
+            pnl_percent = ((best_final_cap - initial_capital) / initial_capital) * 100
+            print(f"🔍 DEBUG: Initial: {initial_capital}, Final: {best_final_cap}, PnL: {pnl_percent:.2f}%")
+        else:
+            pnl_percent = None
+            print(f"🔍 DEBUG: Keine final_cap verfügbar")
         
-        return {
+        print(f"✅ Optimal: Past={p}, Trade={tw}, PnL={pnl_percent:.2f}%" if pnl_percent else f"✅ Optimal: Past={p}, Trade={tw}")
+        
+        optimization_result = {
             'optimal_past_window': p,      # ✅ p -> optimal_past_window
             'optimal_trade_window': tw,    # ✅ tw -> optimal_trade_window
+            'optimal_pnl': pnl_percent,    # ✅ Korrekte PnL-Berechnung
+            'optimization_success': True,   # ✅ Zeigt erfolgreiche Optimierung
             'method': 'berechne_best_p_tw_long'
         }
+        
+        print(f"🔍 DEBUG Optimization Result: {optimization_result}")
+        return optimization_result
         
     except Exception as e:
         print(f"❌ Parameter-Optimierung fehlgeschlagen: {e}")
@@ -1495,10 +1543,12 @@ def optimize_parameters(df, symbol):
         return {
             'optimal_past_window': 5,
             'optimal_trade_window': 2,
+            'optimal_pnl': None,
+            'optimization_success': False,  # ✅ Zeigt Fallback
             'method': 'fallback'
         }
 
-def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=None):
+def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=None, order_round_factor=1.0):
     """
     Simuliert Matched Trades basierend auf Extended Signals
     Inkludiert offene Trades mit heutigem artificial price
@@ -1514,20 +1564,24 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=
         
         for idx, row in ext_full.iterrows():
             if row['Action'] == 'buy' and position is None:
-                # Öffne Long Position
+                # Öffne Long Position - berechne shares mit round_factor
+                entry_price = row['Level Close']
+                shares = calculate_shares(capital, entry_price, order_round_factor)
+                
                 position = {
                     'entry_date': row['Long Date detected'],
-                    'entry_price': row['Level Close'],
-                    'entry_idx': idx
+                    'entry_price': entry_price,
+                    'entry_idx': idx,
+                    'shares': shares  # Speichere shares für späteren Verkauf
                 }
             elif row['Action'] == 'sell' and position is not None:
-                # Schließe Position
+                # Schließe Position - verwende gleiche shares vom Kauf
                 entry_price = position['entry_price']
                 exit_price = row['Level Close']
-                quantity = capital / entry_price
+                shares = position['shares']  # Gleiche shares wie beim Kauf!
                 
-                pnl = (exit_price - entry_price) * quantity
-                commission = (entry_price + exit_price) * quantity * commission_rate
+                pnl = (exit_price - entry_price) * shares
+                commission = (entry_price + exit_price) * shares * commission_rate
                 net_pnl = pnl - commission
                 capital += net_pnl
                 
@@ -1536,7 +1590,7 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=
                     'Entry Price': round(entry_price, 2),
                     'Exit Date': row['Long Date detected'],
                     'Exit Price': round(exit_price, 2),
-                    'Quantity': round(quantity, 4),
+                    'Shares': round(shares, 4),  # Changed from Quantity to Shares
                     'PnL': round(pnl, 2),
                     'Commission': round(commission, 2),
                     'Net PnL': round(net_pnl, 2),
@@ -1548,7 +1602,7 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=
         # ✅ OFFENE POSITION MIT HEUTIGEM ARTIFICIAL PRICE HINZUFÜGEN
         if position is not None and data_df is not None:
             entry_price = position['entry_price']
-            quantity = capital / entry_price
+            shares = position['shares']  # Use shares from position, not recalculate
             
             # Heutigen artificial price finden
             today_timestamp = pd.Timestamp(today)
@@ -1563,17 +1617,17 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=
                 print(f"🤖 Offene Position: Letzter verfügbarer Preis = €{artificial_price:.4f}")
             
             # Unrealized PnL berechnen
-            unrealized_pnl = (artificial_price - entry_price) * quantity
+            unrealized_pnl = (artificial_price - entry_price) * shares
             
             matched.append({
                 'Entry Date': position['entry_date'],
                 'Entry Price': round(entry_price, 2),
                 'Exit Date': today.strftime('%Y-%m-%d'),
                 'Exit Price': round(artificial_price, 2),
-                'Quantity': round(quantity, 4),
+                'Shares': round(shares, 4),  # Changed from Quantity to Shares
                 'PnL': round(unrealized_pnl, 2),
-                'Commission': round(entry_price * quantity * commission_rate, 2),
-                'Net PnL': round(unrealized_pnl - (entry_price * quantity * commission_rate), 2),
+                'Commission': round(entry_price * shares * commission_rate, 2),
+                'Net PnL': round(unrealized_pnl - (entry_price * shares * commission_rate), 2),
                 'Capital': round(capital + unrealized_pnl, 2),
                 'Status': 'OPEN',
                 'Type': 'Artificial'

@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import traceback
 from datetime import date, timedelta
+from MultiTradingIB25D_crypto import simulate_trades_compound_extended as sim_trades_ext
 def remove_all_headers_and_set_columns(df, new_columns=None):
     """
     Entfernt alle Header und setzt neue Spalten
@@ -409,9 +410,19 @@ def get_trade_day_offset(date_hl, tw, data):
         return pd.NaT
     return future_dates[tw - 1]
 
-def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe):
+def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe, trade_on="Close", initial_capital=1000, order_round_factor=1):
     """
     CONSECUTIVE LOGIC: Nur erste Support/Resistance in Serie = Action
+    
+    Parameters:
+    - supp_full: Support levels
+    - res_full: Resistance levels  
+    - df: Price data DataFrame
+    - tw: Trade window (optimized)
+    - timeframe: Trading timeframe
+    - trade_on: "Close" or "Open" - which price to use for trade execution
+    - initial_capital: Capital for calculating shares
+    - order_round_factor: Rounding factor for shares
     """
     try:
         signals = []
@@ -459,16 +470,22 @@ def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe):
             # Update für nächste Iteration
             last_type = current_type
             
-            # Handelsdatum berechnen
-            next_day = level_info['date'] + pd.Timedelta(days=1)
+            # 🎯 FIXED: Verwende den optimierten tw Parameter anstatt HARDCODED 1 Tag!
+            trade_day = level_info['date'] + pd.Timedelta(days=tw)
             
-            # Close Preis finden
-            if next_day in df.index:
-                close_price = df.loc[next_day, 'Close']
+            # 🎯 NEW: Trade-Preis basierend auf trade_on Parameter (Open/Close)
+            price_column = 'Open' if trade_on.lower() == 'open' else 'Close'
+            
+            # Trade-Preis finden
+            if trade_day in df.index:
+                trade_price = df.loc[trade_day, price_column]
             elif level_info['date'] in df.index:
-                close_price = df.loc[level_info['date'], 'Close']
+                trade_price = df.loc[level_info['date'], price_column]
             else:
                 continue
+            
+            # Calculate shares based on trade price and capital
+            shares = calculate_shares(initial_capital, trade_price, order_round_factor) if action in ['buy', 'sell'] else None
             
             signals.append({
                 'Date high/low': level_info['date'].strftime('%Y-%m-%d'),
@@ -476,10 +493,11 @@ def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe):
                 'Supp/Resist': current_type,
                 'Action': action,  # buy/sell/None
                 'Long Signal Extended': long_signal,
-                'Long Date detected': next_day.strftime('%Y-%m-%d'),
-                'Level Close': close_price,
-                'Long Trade Day': next_day,
-                'Level trade': None
+                'Long Date detected': trade_day.strftime('%Y-%m-%d'),
+                'Level Close': trade_price,  # 🎯 Now uses Open or Close based on trade_on
+                'Long Trade Day': trade_day,
+                'Level trade': None,
+                'shares': shares  # ✅ Add shares calculation
             })
         
         # DataFrame erstellen
@@ -541,7 +559,7 @@ def get_trade_day_offset(date_hl, tw, data):
         print(f"⚠️ Fehler in get_trade_day_offset: {e}")
         return pd.NaT
 
-def simulate_trades_compound_extended(signals_df, initial_capital, commission_rate, min_commission, 
+def simulate_trades_compound_extended_placeholder(signals_df, initial_capital, commission_rate, min_commission, 
                                     order_round_factor, data, trade_on_price='Close'):
     """
     ✅ ERWEITERTE TRADE SIMULATION
@@ -585,41 +603,136 @@ def update_level_close_long(ext, df):
         if pd.isna(dt):
             closes.append(np.nan)
         else:
-            dt0 = dt.normalize()
             try:
-                val = df.at[dt0, "Close"]
-                closes.append(float(val))
-            except:
+                # Konvertiere zu Datetime falls String
+                if isinstance(dt, str):
+                    # Wenn nur Datum (ohne Zeit), finde ersten Eintrag des Tages
+                    if len(dt) <= 10:  # Format: '2025-07-28'
+                        dt_start = pd.to_datetime(dt + ' 00:00:00')
+                        # Finde alle Einträge für diesen Tag
+                        day_data = df[df.index.date == dt_start.date()]
+                        if len(day_data) > 0:
+                            # Verwende den Close des ersten Eintrags des Tages
+                            val = day_data["Close"].iloc[0]
+                            closes.append(float(val))
+                        else:
+                            closes.append(np.nan)
+                    else:
+                        # Vollständiger Timestamp
+                        dt = pd.to_datetime(dt)
+                        if dt in df.index:
+                            val = df.loc[dt, "Close"]
+                            closes.append(float(val))
+                        else:
+                            # Finde nächsten verfügbaren Zeitpunkt
+                            idx = df.index.get_indexer([dt], method='nearest')[0]
+                            if idx != -1:
+                                val = df.iloc[idx]["Close"]
+                                closes.append(float(val))
+                            else:
+                                closes.append(np.nan)
+                elif pd.notna(dt):
+                    # Timestamp object
+                    if dt in df.index:
+                        val = df.loc[dt, "Close"]
+                        closes.append(float(val))
+                    else:
+                        # Finde nächsten verfügbaren Zeitpunkt
+                        idx = df.index.get_indexer([dt], method='nearest')[0] 
+                        if idx != -1:
+                            val = df.iloc[idx]["Close"]
+                            closes.append(float(val))
+                        else:
+                            closes.append(np.nan)
+                else:
+                    closes.append(np.nan)
+            except Exception as e:
+                # Debug-Ausgabe für besseres Verständnis
+                print(f"🔍 DEBUG update_level_close_long error: dt={dt}, type={type(dt)}, error={e}")
                 closes.append(np.nan)
     ext["Level Close"] = closes
     return ext
 
-def berechne_best_p_tw_long(df, cfg, start_idx, end_idx, verbose=False, ticker=None):
+def berechne_best_p_tw_long(df, cfg, start_idx, end_idx, verbose=False, ticker=None, trade_on="Close"):
+    """
+    🎯 OPTIMIERT TRADING-PARAMETER FÜR MAXIMALEN GEWINN
+    
+    Testet systematisch verschiedene Kombinationen von:
+    - past_window (3-9): Anzahl Tage für Support/Resistance Berechnung
+    - trade_window (1-5): Anzahl Tage Verzögerung für Trade-Ausführung
+    
+    OPTIMIERT NACH: Maximalem Endkapital (höchster absoluter Gewinn)
+    BERÜCKSICHTIGT: Kommissionen, Rundungsfaktoren, trade_on (Open/Close)
+    """
     optimierungsergebnisse = []
+    
+    # Extract parameters from config
+    initial_capital = cfg.get('initialCapitalLong', 10000)
+    order_round_factor = cfg.get('order_round_factor', 1)
+    
+    if verbose:
+        label = ticker or "Unbekannter Ticker"
+        print(f"\n🎯 STARTE PARAMETER-OPTIMIERUNG für {label}")
+        print(f"   💰 Startkapital: {initial_capital:,.2f} EUR")
+        print(f"   🔧 Trade-Ausführung: {trade_on} price")
+        print(f"   📊 Optimiert nach: Maximalem Endkapital")
+        print(f"   🔄 Teste: past_window (3-9) × trade_window (1-5) = 35 Kombinationen")
+        print("   " + "="*60)
 
     for past_window in range(3, 10):
         for tw in range(1, 6):  # Changed from trade_window to tw
             try:
+                if verbose:
+                    print(f"🔍 Testing past_window={past_window}, tw={tw}")
+                    
                 df_opt = df.iloc[start_idx:end_idx].copy()
+                
+                if verbose:
+                    print(f"   DataFrame shape: {df_opt.shape}")
+                
                 # Both past_window and tw are optimized here
                 support, resistance = calculate_support_resistance(df_opt, past_window, tw, verbose=False)
-                signal_df = assign_long_signals_extended(support, resistance, df_opt, tw, "1d")
+                
+                if verbose:
+                    print(f"   Support/Resistance calculated")
+                    
+                signal_df = assign_long_signals_extended(support, resistance, df_opt, tw, "1d", trade_on, 
+                                                       initial_capital, order_round_factor)
+                
+                if verbose:
+                    print(f"   Signals assigned, shape: {signal_df.shape}")
+                    
                 signal_df = update_level_close_long(signal_df, df_opt)
+                
+                if verbose:
+                    print(f"   Level close updated")
 
-                final_capital, _ = simulate_trades_compound_extended(
-                    signal_df, df_opt, cfg,
+                result = sim_trades_ext(
+                    signal_df, df_opt,
+                    starting_capital=cfg.get("initial_capital", 10000),
                     commission_rate=cfg.get("commission_rate", 0.001),
                     min_commission=cfg.get("min_commission", 1.0),
-                    round_factor=cfg.get("order_round_factor", 1),
-                    direction="long"
+                    round_factor=cfg.get("order_round_factor", 1)
                 )
+                
+                # Entpacke das Ergebnis korrekt
+                if isinstance(result, tuple):
+                    final_capital, _ = result
+                else:
+                    final_capital = result
+                
+                if verbose:
+                    print(f"   ✅ Final capital: {final_capital}")
 
                 optimierungsergebnisse.append({
                     "past_window": past_window,
                     "trade_window": tw,  # Store tw as trade_window for compatibility
                     "final_cap": final_capital
                 })
+                
             except Exception as e:
+                if verbose:
+                    print(f"   ❌ Error for past_window={past_window}, tw={tw}: {e}")
                 continue
 
     if optimierungsergebnisse:
@@ -627,18 +740,31 @@ def berechne_best_p_tw_long(df, cfg, start_idx, end_idx, verbose=False, ticker=N
         best_row = df_result.iloc[0]
         p = int(best_row["past_window"])
         tw = int(best_row["trade_window"])
+        best_final_cap = float(best_row["final_cap"])  # ✅ Beste final_cap hinzufügen
         if verbose:
             label = ticker or "Unbekannter Ticker"
-            print(f"\n📊 Optimierung Long für {label}")
-            print(df_result.to_string(index=False))
-            print(f"→ Beste Kombination: {df_result.iloc[0].to_dict()}")
+            # 🚫 AUSKOMMENTIERT - Verwirrende zweite Optimierungs-Ausgabe
+            # print(f"\n📊 Optimierung Long für {label}")
+            # print(df_result.to_string(index=False))
+            # print(f"→ Beste Kombination: {df_result.iloc[0].to_dict()}")
+            
+            # ✅ KLARE, VERSTÄNDLICHE AUSGABE DER OPTIMALEN PARAMETER
+            initial_cap = cfg.get('initial_capital', 10000)
+            pnl_percent = ((best_final_cap - initial_cap) / initial_cap) * 100
+            print(f"\n🎯 OPTIMIERUNG ABGESCHLOSSEN für {label}")
+            print(f"   🔹 Beste Parameter: past_window={p}, trade_window={tw}")
+            print(f"   💰 Startkapital: {initial_cap:,.2f} EUR")
+            print(f"   🚀 Endkapital: {best_final_cap:,.2f} EUR")
+            print(f"   📈 Gewinn: {pnl_percent:+.2f}%")
+            print(f"   📊 Getestete Kombinationen: {len(df_result)}")
     else:
         p = 5
         tw = 2
+        best_final_cap = None  # ✅ Fallback für final_cap
         if verbose:
             print("⚠️ Keine Optimierungsergebnisse, nutze Default-Werte.")
 
-    return p, tw
+    return p, tw, best_final_cap  # ✅ Erweiterte Rückgabe
 
 def plot_combined_chart_and_equity(df, standard, _dummy, supp, res, trend,
                                    equity_long, _empty, buyhold, ticker):
