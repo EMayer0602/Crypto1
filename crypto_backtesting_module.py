@@ -1504,13 +1504,15 @@ def run_backtest(symbol, config):
                     <tbody>
                 """
                 
-                for idx, (date, trade) in enumerate(recent_ext_trades.iterrows()):
-                    trade_date = date.strftime('%Y-%m-%d')
+                for idx, (date_idx, trade) in enumerate(recent_ext_trades.iterrows()):
+                    # Convert date index to proper datetime
+                    date_obj = pd.to_datetime(trade['Date']) if 'Date' in trade else pd.to_datetime(date_idx)
+                    trade_date = date_obj.strftime('%Y-%m-%d')
                     action = trade.get('Action', 'N/A')
                     price = trade.get('Close', 0)
                     
                     today = datetime.now().date()
-                    current_trade_date = pd.to_datetime(date).date()
+                    current_trade_date = date_obj.date()
                     type_desc = "Artificial" if current_trade_date == today else "Limit"
                     
                     if action in ['BUY', 'Buy']:
