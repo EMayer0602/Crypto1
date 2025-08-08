@@ -8,7 +8,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from crypto_backtesting_module import load_crypto_data_yf, run_optimization_and_backtest
+from crypto_backtesting_module import load_crypto_data_yf, run_backtest
 from crypto_tickers import crypto_tickers
 
 def simple_test_btc():
@@ -31,9 +31,9 @@ def simple_test_btc():
         print(f"📅 Data Range: {df.index.min().date()} bis {df.index.max().date()}")
         print(f"📊 Total Days: {len(df)}")
         
-        # Führe Optimization und Backtest durch
+        # Führe Backtest durch
         try:
-            result = run_optimization_and_backtest(symbol, config)
+            result = run_backtest(symbol)
             if result:
                 print(f"✅ Backtest erfolgreich!")
                 print(f"   PnL: {result.get('total_return_pct', 0):.2f}%")

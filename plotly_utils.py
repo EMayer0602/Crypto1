@@ -834,7 +834,13 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
         
         # Setze previous_close für den ersten Tag
         if previous_close is None:
-            previous_close = today_open  # Fallback für ersten Tag
+            if i > 0:
+                # Verwende Close des Vortages
+                previous_date = df_bt.index[i-1]
+                previous_close = df_bt.loc[previous_date, 'Close']
+            else:
+                # Allererster Tag: verwende den Open als Fallback
+                previous_close = today_open
         
         # ✅ 1. PRÜFE BUY-SIGNAL (komplette Trades)
         is_buy_day = False
@@ -890,6 +896,7 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
                     daily_pnl = position_shares * (today_open - previous_close)
                     current_capital = current_capital + daily_pnl - sell_fees
                     if i < 5 or i > len(df_bt) - 5:
+                        print(f"   💰 SELL OPEN {date.date()}: Verkauf zum Open €{today_open:.2f}, Fees: €{sell_fees:.2f}, Capital: €{current_capital:.0f}")
                         print(f"   � SELL OPEN {date.date()}: {position_shares:.4f} * (€{today_open:.2f} - €{previous_close:.2f}) - €{sell_fees:.2f} = €{daily_pnl - sell_fees:.2f}, Capital: €{current_capital:.0f}")
                 else:
                     # Trade on Close: capital = capital + (close - previous_close) * shares - fee

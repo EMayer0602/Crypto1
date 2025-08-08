@@ -744,22 +744,61 @@ def simulate_trades_compound_extended(signals_df, initial_capital, commission_ra
             price = row.get('Level Close', row.get('Close', 0))
             
             if action == 'buy' and position == 0:
-                # Kaufen - KORRIGIERT: Shares als float, nicht int
-                shares = round((capital * 0.95) / price, 8)  # Float shares, auf 8 Dezimalstellen gerundet
+                # Kaufen - Nutze das GANZE Capital, aber berücksichtige Fees
+                # Berechne verfügbares Capital nach Abzug geschätzter Fees
+                estimated_commission_rate = commission_rate
+                # Iterative Berechnung: shares so dass (shares * price + commission) <= capital
+                
+                # Erste Näherung: rohes Capital durch Preis
+                raw_shares = capital / price
+                
+                # Anwendung des order_round_factor (z.B. 1000 für DOGE)
+                if order_round_factor >= 1:
+                    # Runde auf Vielfache des Rundungsfaktors (z.B. 1000, 100, 10)
+                    shares = round(raw_shares / order_round_factor) * order_round_factor
+                else:
+                    # Runde auf Dezimalstellen (z.B. 0.001 für BTC)
+                    decimal_places = len(str(order_round_factor).split('.')[-1])
+                    shares = round(raw_shares, decimal_places)
+                
+                # Überprüfe, ob genug Capital nach Rundung vorhanden ist
                 if shares > 0:
                     cost = shares * price
                     commission = max(cost * commission_rate, min_commission)
-                    capital -= (cost + commission)
-                    position = shares
+                    total_required = cost + commission
                     
-                    trades.append({
-                        'Date': idx,
-                        'Action': 'BUY',
-                        'Price': price,
-                        'Shares': shares,
-                        'Cost': cost + commission,
-                        'Capital': capital
-                    })
+                    # Falls nach Rundung nicht genug Capital: reduziere shares
+                    if total_required > capital:
+                        # Berechne maximal mögliche shares unter Berücksichtigung von fees
+                        max_cost = capital - min_commission  # Reserve für Mindest-Commission
+                        if max_cost > 0:
+                            max_shares_unrounded = max_cost / (price * (1 + commission_rate))
+                            
+                            # Wende Rundung auf reduzierte shares an
+                            if order_round_factor >= 1:
+                                shares = round(max_shares_unrounded / order_round_factor) * order_round_factor
+                            else:
+                                decimal_places = len(str(order_round_factor).split('.')[-1])
+                                shares = round(max_shares_unrounded, decimal_places)
+                            
+                            # Neuberechnung der Kosten
+                            cost = shares * price
+                            commission = max(cost * commission_rate, min_commission)
+                            total_required = cost + commission
+                    
+                    # Final validation
+                    if shares > 0 and total_required <= capital:
+                        capital -= total_required
+                        position = shares
+                        
+                        trades.append({
+                            'Date': idx,
+                            'Action': 'BUY',
+                            'Price': price,
+                            'Shares': shares,
+                            'Cost': total_required,
+                            'Capital': capital
+                        })
                     
             elif action == 'sell' and position > 0:
                 # Verkaufen
