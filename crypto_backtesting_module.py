@@ -1267,22 +1267,51 @@ def calculate_trade_statistics(matched_trades, equity_curve, initial_capital, co
     win_percentage = (winning_trades / total_trades * 100) if total_trades > 0 else 0
     loss_percentage = (losing_trades / total_trades * 100) if total_trades > 0 else 0
     
-    total_pnl = sum(trade['pnl'] for trade in matched_trades)
-    total_fees = sum(trade['total_fees'] for trade in matched_trades)
-    final_capital = initial_capital + total_pnl
+    # Calculate PnL and fees - use Net PnL if available
+    if isinstance(matched_trades, pd.DataFrame):
+        if 'Net PnL' in matched_trades.columns:
+            total_net_pnl = matched_trades['Net PnL'].sum()
+            total_pnl = matched_trades['PnL'].sum() if 'PnL' in matched_trades.columns else total_net_pnl
+        else:
+            total_pnl = sum(trade.get('pnl', 0) for trade in matched_trades.to_dict('records'))
+            total_net_pnl = total_pnl
+        
+        if 'Commission' in matched_trades.columns:
+            total_fees = matched_trades['Commission'].sum()
+        else:
+            total_fees = sum(trade.get('total_fees', 0) for trade in matched_trades.to_dict('records'))
+        
+        winning_trades = len(matched_trades[matched_trades['Net PnL' if 'Net PnL' in matched_trades.columns else 'PnL'] > 0])
+    else:
+        # Fallback for list format
+        total_pnl = sum(trade['pnl'] for trade in matched_trades)
+        total_fees = sum(trade['total_fees'] for trade in matched_trades)
+        total_net_pnl = total_pnl - total_fees
+        winning_trades = sum(1 for trade in matched_trades if trade['pnl'] > 0)
     
-    # Calculate max drawdown
+    final_capital = initial_capital + total_net_pnl
+    
+    # Calculate max drawdown using Net PnL
     max_drawdown = 0.0
     peak = initial_capital
     current_capital = initial_capital
     
-    for trade in matched_trades:
-        current_capital += trade['pnl']
-        if current_capital > peak:
-            peak = current_capital
-        drawdown = (peak - current_capital) / peak * 100
-        if drawdown > max_drawdown:
-            max_drawdown = drawdown
+    if isinstance(matched_trades, pd.DataFrame) and 'Net PnL' in matched_trades.columns:
+        for _, row in matched_trades.iterrows():
+            current_capital += row['Net PnL']
+            if current_capital > peak:
+                peak = current_capital
+            drawdown = (peak - current_capital) / peak * 100 if peak > 0 else 0
+            if drawdown > max_drawdown:
+                max_drawdown = drawdown
+    else:
+        for trade in matched_trades:
+            current_capital += (trade.get('pnl', 0) - trade.get('total_fees', 0))
+            if current_capital > peak:
+                peak = current_capital
+            drawdown = (peak - current_capital) / peak * 100 if peak > 0 else 0
+            if drawdown > max_drawdown:
+                max_drawdown = drawdown
     
     stats = {
         'Total Trades': total_trades,
@@ -1291,6 +1320,7 @@ def calculate_trade_statistics(matched_trades, equity_curve, initial_capital, co
         'Win Percentage': round(win_percentage, 2),
         'Loss Percentage': round(loss_percentage, 2),
         'Total PnL': round(total_pnl, 3),
+        'Total Net PnL': round(total_net_pnl, 3),
         'Total Fees': round(total_fees, 3),
         'Final Capital': round(final_capital, 3),
         'Max Drawdown': round(max_drawdown, 2)
@@ -1578,35 +1608,47 @@ def restrict_to_percent_slice(df, begin, end):
     end_idx = int(n * end / 100)
     return df.iloc[start_idx:end_idx]
 
-def capture_trades_output(matched_trades, open_trade_info=None):
+def capture_trades_output(matched_trades, open_trade_info=None, initial_capital=10000.0):
     """
     Convert matched_trades list to the formatted string output that can be analyzed
     Also handles the last open trade if provided
     """
     trades_text = ""
     
-    if not matched_trades and not open_trade_info:
+    if (matched_trades is None or (hasattr(matched_trades, 'empty') and matched_trades.empty) or len(matched_trades) == 0) and not open_trade_info:
         return trades_text
     
     # Process completed matched trades
-    for i, trade in enumerate(matched_trades):
-        # Extract trade data
-        buy_date = trade.get('buy_date', 'N/A')
-        sell_date = trade.get('sell_date', 'N/A')
-        buy_price = trade.get('buy_price', 0)
-        sell_price = trade.get('sell_price', 0)
-        shares = trade.get('shares', 0)
-        trade_value = trade.get('trade_value', 0)
-        total_fees = trade.get('total_fees', 0)
-        pnl = trade.get('pnl', 0)
+    if isinstance(matched_trades, pd.DataFrame):
+        trades_list = matched_trades.to_dict('records')
+    else:
+        trades_list = matched_trades or []
         
-        # Calculate capital (approximate running capital)
+    for i, trade in enumerate(trades_list):
+        # Extract trade data
+        buy_date = trade.get('buy_date', trade.get('Entry Date', 'N/A'))
+        sell_date = trade.get('sell_date', trade.get('Exit Date', 'N/A'))
+        buy_price = trade.get('buy_price', trade.get('Entry Price', 0))
+        sell_price = trade.get('sell_price', trade.get('Exit Price', 0))
+        shares = trade.get('shares', trade.get('Quantity', 0))
+        trade_value = trade.get('trade_value', 0)
+        total_fees = trade.get('total_fees', trade.get('Commission', 0))
+        pnl = trade.get('pnl', trade.get('PnL', 0))
+        
+        # Calculate capital (approximate running capital using Net PnL)
         if i == 0:
-            capital = 10000.0  # Initial capital
+            capital = initial_capital  # Use provided initial capital
         else:
-            # Calculate running capital from previous trades
-            previous_pnl = sum(t.get('pnl', 0) for t in matched_trades[:i])
-            capital = 10000.0 + previous_pnl
+            # Calculate running capital from previous trades (use NET PnL after fees)
+            if isinstance(matched_trades, pd.DataFrame) and 'Net PnL' in matched_trades.columns:
+                # Use Net PnL from DataFrame for completed trades
+                previous_trades = matched_trades.iloc[:i]
+                completed_previous = previous_trades[previous_trades['Status'] == 'CLOSED'] if 'Status' in previous_trades.columns else previous_trades
+                previous_net_pnl = completed_previous['Net PnL'].sum()
+            else:
+                # Fallback to gross PnL if Net PnL not available
+                previous_net_pnl = sum(t.get('pnl', 0) for t in matched_trades[:i])
+            capital = initial_capital + previous_net_pnl
         
         # Calculate raw shares (before rounding)
         raw_shares = capital / buy_price if buy_price > 0 else shares
@@ -1623,9 +1665,16 @@ def capture_trades_output(matched_trades, open_trade_info=None):
         buy_price = open_trade_info.get('buy_price', 0)
         shares = open_trade_info.get('shares', 0)
         
-        # Calculate capital after all completed trades
-        total_pnl = sum(t.get('pnl', 0) for t in matched_trades)
-        capital = 10000.0 + total_pnl
+        # Calculate capital after all completed trades (use NET PnL after fees)
+        if isinstance(matched_trades, pd.DataFrame) and 'Net PnL' in matched_trades.columns:
+            # Use Net PnL from DataFrame
+            completed_trades = matched_trades[matched_trades['Status'] == 'CLOSED'] if 'Status' in matched_trades.columns else matched_trades
+            total_net_pnl = completed_trades['Net PnL'].sum()
+        else:
+            # Fallback to gross PnL if Net PnL not available
+            total_net_pnl = sum(t.get('pnl', 0) for t in matched_trades)
+        
+        capital = initial_capital + total_net_pnl
         
         # Calculate raw shares
         raw_shares = capital / buy_price if buy_price > 0 else shares
@@ -1884,7 +1933,7 @@ def run_backtest(symbol, config):
         # 4. MATCHED TRADES - SIMULATION (mit kompletten df)
         print(f"\n📊 4. MATCHED TRADES - SIMULATION - {symbol}")
         print("="*120)
-        matched_trades = simulate_matched_trades(ext_full, initial_capital, commission_rate, df)
+        matched_trades = simulate_matched_trades(ext_full, initial_capital, commission_rate, df, order_round_factor)
         if not matched_trades.empty:
             print(matched_trades.to_string(index=True, max_rows=None))
         else:
@@ -2196,7 +2245,7 @@ def optimize_parameters(df, symbol):
             'method': 'fallback'
         }
 
-def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=None):
+def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=None, order_round_factor=1.0):
     """
     Simuliert Matched Trades basierend auf Extended Signals
     Inkludiert offene Trades mit heutigem artificial price
@@ -2222,7 +2271,10 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=
                 # Schließe Position
                 entry_price = position['entry_price']
                 exit_price = row['Level Close']
-                quantity = capital / entry_price
+                
+                # Calculate quantity using order_round_factor
+                raw_quantity = capital / entry_price
+                quantity = round(raw_quantity / order_round_factor) * order_round_factor
                 
                 pnl = (exit_price - entry_price) * quantity
                 commission = (entry_price + exit_price) * quantity * commission_rate
@@ -2246,7 +2298,10 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=
         # ✅ OFFENE POSITION MIT HEUTIGEM ARTIFICIAL PRICE HINZUFÜGEN
         if position is not None and data_df is not None:
             entry_price = position['entry_price']
-            quantity = capital / entry_price
+            
+            # Calculate quantity using order_round_factor
+            raw_quantity = capital / entry_price
+            quantity = round(raw_quantity / order_round_factor) * order_round_factor
             
             # Heutigen artificial price finden
             today_timestamp = pd.Timestamp(today)
