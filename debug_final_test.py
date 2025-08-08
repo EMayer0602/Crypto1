@@ -1,98 +1,67 @@
 #!/usr/bin/env python3
-"""
-🔍 DEBUG - Manuelle Optimierung Test FINAL
-Reproduziert einen einzigen Optimierungsschritt manuell
-"""
+"""Debug der Equity Curve Berechnung - FOKUS"""
 
 import pandas as pd
-import numpy as np
-import config
-from signal_utils import calculate_support_resistance, assign_long_signals_extended, update_level_close_long
-from MultiTradingIB25D_crypto import simulate_trades_compound_extended
+from crypto_backtesting_module import run_backtest
+from crypto_tickers import crypto_tickers
 
-# Lade Daten
-print("🔍 DEBUG - Manuelle Optimierung Test FINAL")
-print("="*50)
-
-try:
-    # Konfiguration als Dictionary
-    cfg = {
-        'initial_capital': 10000,
-        'commission_rate': config.COMMISSION_RATE,
-        'min_commission': config.MIN_COMMISSION,
-        'order_round_factor': config.ORDER_ROUND_FACTOR
-    }
-    print(f"✅ Config geladen: initial_capital={cfg['initial_capital']}")
-
-    # Test Daten für BTC-EUR laden mit korrekter DateTime-Spalte 
-    df = pd.read_csv('BTC-EUR_minute.csv', parse_dates=['DateTime'])
-    df.set_index('DateTime', inplace=True)
+def debug_final_capital():
+    print("🔍 DEBUGGING FINAL CAPITAL & EQUITY CURVE...")
+    print("=" * 60)
     
-    print(f"✅ Daten geladen: {df.shape}")
-
-    # Test Parameter
-    past_window = 7
-    tw = 3
-    start_idx = 100
-    end_idx = 200
-
-    print(f"\n📊 Teste Optimierung mit:")
-    print(f"   past_window: {past_window}")
-    print(f"   trade_window (tw): {tw}")
-    print(f"   start_idx: {start_idx}, end_idx: {end_idx}")
-
-    # Teste die komplette Optimierungsschleife Schritt für Schritt
-    df_opt = df.iloc[start_idx:end_idx].copy()
-    print(f"   1. Daten geschnitten: {df_opt.shape}")
-
-    # 1. Support/Resistance berechnen
-    print("   2. Berechne Support/Resistance...")
-    support, resistance = calculate_support_resistance(df, past_window, tw, verbose=False)
-    print(f"      Support/Resistance berechnet")
-
-    # 2. Signale generieren
-    print("   3. Generiere Signale...")
-    signal_df = assign_long_signals_extended(support, resistance, df, tw, "1d")
-    print(f"      Signal_df shape: {signal_df.shape}")
-    if 'Action' in signal_df.columns:
-        print(f"      Actions counts: {signal_df['Action'].value_counts().to_dict()}")
-
-    # 3. Update Level Close
-    print("   4. Update Level Close...")
-    signal_df = update_level_close_long(signal_df, df)
-    print(f"      Updated signal_df shape: {signal_df.shape}")
-
-    # 4. Simuliere Trades
-    print("   5. Simuliere Trades...")
-    result = simulate_trades_compound_extended(
-        signal_df, df,
-        starting_capital=cfg['initial_capital'],
-        commission_rate=cfg.get("commission_rate", 0.001),
-        min_commission=cfg.get("min_commission", 1.0),
-        round_factor=cfg.get("order_round_factor", 1)
-    )
+    # Führe Backtest aus
+    config = crypto_tickers['BTC-EUR']
+    ticker = 'BTC-EUR'
     
-    # Entpacke das Ergebnis korrekt
-    if isinstance(result, tuple):
-        final_capital, trades_log = result
+    print(f"📊 Testing {ticker} with initial capital: €{config['initialCapitalLong']:,.0f}")
+    
+    result = run_backtest(ticker, config)
+    
+    if result and result.get('success'):
+        print("✅ Backtest successful!")
+        
+        # Prüfe Final Capital
+        final_cap = result.get('final_capital', 0)
+        print(f"📈 Final Capital from result: €{final_cap:,.2f}")
+        
+        # Prüfe Equity Curve
+        equity_curve = result.get('equity_curve', [])
+        print(f"📊 Equity curve length: {len(equity_curve)}")
+        
+        if len(equity_curve) > 0:
+            print(f"📊 Equity curve range: €{min(equity_curve):,.0f} - €{max(equity_curve):,.0f}")
+            print(f"📊 First 5 equity values: {equity_curve[:5]}")
+            print(f"📊 Last 5 equity values: {equity_curve[-5:]}")
+        
+        # ✅ Prüfe matched_trades im Detail
+        matched_trades = result.get('matched_trades', pd.DataFrame())
+        print(f"📊 Matched trades shape: {matched_trades.shape}")
+        
+        if not matched_trades.empty:
+            print(f"📊 Matched trades columns: {list(matched_trades.columns)}")
+            
+            # Zeige nur verfügbare Spalten
+            available_cols = [col for col in ['Date', 'Action', 'Price', 'Capital', 'Shares'] if col in matched_trades.columns]
+            if available_cols:
+                print(f"📊 First 3 matched trades ({available_cols}):")
+                print(matched_trades[available_cols].head(3))
+            
+            if 'Capital' in matched_trades.columns:
+                capital_values = matched_trades['Capital'].tolist()
+                print(f"📊 Capital progression: €{capital_values[0]:,.0f} -> €{capital_values[-1]:,.0f}")
+                print(f"📊 Expected match with equity curve: {abs(capital_values[-1] - equity_curve[-1]) < 100 if equity_curve else 'N/A'}")
+        else:
+            print(f"❌ No matched trades found!")
+            
+        # Trade Statistics
+        trade_stats = result.get('trade_statistics', {})
+        if trade_stats:
+            print(f"📊 Trade statistics keys: {list(trade_stats.keys())}")
+            final_cap_stat = trade_stats.get('💼 Final Capital', 'N/A')
+            print(f"📊 Final Capital from stats: {final_cap_stat}")
+    
     else:
-        final_capital = result
-    
-    print(f"      ✅ Final capital: {final_capital}")
-    print(f"      Initial capital: {cfg['initial_capital']}")
+        print("❌ Backtest failed")
 
-    pnl = ((final_capital - cfg['initial_capital']) / cfg['initial_capital']) * 100
-    print(f"      📈 PnL: {pnl:.2f}%")
-    
-    print(f"\n🎯 ERFOLG! Die Optimierung läuft jetzt ohne Fehler!")
-    print(f"   ✅ Date-Normalisierung funktioniert")
-    print(f"   ✅ Trade-Simulation funktioniert")  
-    print(f"   ✅ PnL wird korrekt berechnet: {pnl:.2f}%")
-
-except Exception as e:
-    print(f"❌ Fehler in der manuellen Optimierung: {e}")
-    import traceback
-    traceback.print_exc()
-
-print("\n" + "="*50)
-print("🔍 DEBUG Ende")
+if __name__ == "__main__":
+    debug_final_capital()

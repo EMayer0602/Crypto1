@@ -440,7 +440,7 @@ def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe):
         # WICHTIG: Chronologisch sortieren
         all_levels.sort(key=lambda x: x['date'])
         
-        # CONSECUTIVE LOGIC anwenden
+        # CONSECUTIVE LOGIC: Nur erste Support/Resistance in Serie = Action
         last_type = None
         
         for level_info in all_levels:
@@ -459,12 +459,12 @@ def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe):
             # Update für nächste Iteration
             last_type = current_type
             
-            # Handelsdatum berechnen
-            next_day = level_info['date'] + pd.Timedelta(days=1)
+            # ✅ HANDELSDATUM MIT TW BERECHNEN
+            trade_day = get_trade_day_offset(level_info['date'], tw, df)
             
             # Close Preis finden
-            if next_day in df.index:
-                close_price = df.loc[next_day, 'Close']
+            if trade_day in df.index:
+                close_price = df.loc[trade_day, 'Close']
             elif level_info['date'] in df.index:
                 close_price = df.loc[level_info['date'], 'Close']
             else:
@@ -476,9 +476,9 @@ def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe):
                 'Supp/Resist': current_type,
                 'Action': action,  # buy/sell/None
                 'Long Signal Extended': long_signal,
-                'Long Date detected': next_day.strftime('%Y-%m-%d'),
+                'Long Date detected': trade_day.strftime('%Y-%m-%d'),
                 'Level Close': close_price,
-                'Long Trade Day': next_day,
+                'Long Trade Day': trade_day,
                 'Level trade': None
             })
         
@@ -585,8 +585,12 @@ def update_level_close_long(ext, df):
         if pd.isna(dt):
             closes.append(np.nan)
         else:
-            dt0 = dt.normalize()
             try:
+                # Handle both string and datetime objects
+                if isinstance(dt, str):
+                    dt0 = pd.to_datetime(dt).normalize()
+                else:
+                    dt0 = dt.normalize()
                 val = df.at[dt0, "Close"]
                 closes.append(float(val))
             except:
@@ -597,21 +601,23 @@ def update_level_close_long(ext, df):
 def berechne_best_p_tw_long(df, cfg, start_idx, end_idx, verbose=False, ticker=None):
     optimierungsergebnisse = []
 
-    for past_window in range(3, 10):
-        for tw in range(1, 6):  # Changed from trade_window to tw
+    for past_window in range(2, 15):  # Erweitert von 3-10 auf 2-15
+        for tw in range(1, 8):  # Erweitert von 1-6 auf 1-8
             try:
                 df_opt = df.iloc[start_idx:end_idx].copy()
                 # Both past_window and tw are optimized here
                 support, resistance = calculate_support_resistance(df_opt, past_window, tw, verbose=False)
                 signal_df = assign_long_signals_extended(support, resistance, df_opt, tw, "1d")
-                signal_df = update_level_close_long(signal_df, df_opt)
+                # KORRIGIERT: Nicht update_level_close_long verwenden - das überschreibt mit NaN!
+                # signal_df = update_level_close_long(signal_df, df_opt)  # DEAKTIVIERT!
 
                 final_capital, _ = simulate_trades_compound_extended(
-                    signal_df, df_opt, cfg,
-                    commission_rate=cfg.get("commission_rate", 0.001),
-                    min_commission=cfg.get("min_commission", 1.0),
-                    round_factor=cfg.get("order_round_factor", 1),
-                    direction="long"
+                    signal_df, 
+                    cfg.get("initial_capital", 10000),
+                    cfg.get("commission_rate", 0.001),
+                    cfg.get("min_commission", 1.0),
+                    cfg.get("order_round_factor", 1),
+                    df_opt
                 )
 
                 optimierungsergebnisse.append({
@@ -734,11 +740,12 @@ def simulate_trades_compound_extended(signals_df, initial_capital, commission_ra
         
         for idx, row in signals_df.iterrows():
             action = row.get('Action', '').lower()
-            price = row.get('Close', 0)
+            # KORRIGIERT: Level Close statt Close für extended signals
+            price = row.get('Level Close', row.get('Close', 0))
             
             if action == 'buy' and position == 0:
-                # Kaufen
-                shares = int((capital * 0.95) / (price * order_round_factor)) * order_round_factor
+                # Kaufen - KORRIGIERT: Shares als float, nicht int
+                shares = round((capital * 0.95) / price, 8)  # Float shares, auf 8 Dezimalstellen gerundet
                 if shares > 0:
                     cost = shares * price
                     commission = max(cost * commission_rate, min_commission)
@@ -773,7 +780,8 @@ def simulate_trades_compound_extended(signals_df, initial_capital, commission_ra
         
         # Offene Position schließen (falls vorhanden)
         if position > 0 and len(signals_df) > 0:
-            last_price = signals_df['Close'].iloc[-1]
+            # KORRIGIERT: Level Close für extended signals
+            last_price = signals_df['Level Close'].iloc[-1] if 'Level Close' in signals_df.columns else signals_df['Close'].iloc[-1]
             revenue = position * last_price
             commission = max(revenue * commission_rate, min_commission)
             capital += (revenue - commission)

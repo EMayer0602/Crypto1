@@ -330,12 +330,15 @@ def plotly_combined_chart_and_equity(
     equity_curve,
     buyhold_curve,
     ticker,
-    backtest_years=None
+    backtest_years=None,
+    initial_capital=None  # ✅ ADD INITIAL CAPITAL PARAMETER
 ):
     """
     VOLLSTÄNDIGE Plotly Chart mit ALLEN MARKERN und 2.5x höherer Equity Y-Achse
     """
     print(f"   📊 Creating Enhanced Plotly Chart for {ticker}...")
+    print(f"   🔍 CHART DEBUG: initial_capital parameter = {initial_capital}")
+    print(f"   🔍 CHART DEBUG: equity_curve first 3 values = {equity_curve[:3] if len(equity_curve) > 0 else 'EMPTY'}")
     
     try:
         # Data validation
@@ -446,11 +449,123 @@ def plotly_combined_chart_and_equity(
             except Exception as e:
                 print(f"   ❌ Resistance plotting error: {e}")
         
-        # 4. ✅ BUY/SELL SIGNALS aus DataFrame
+        # 4. ✅ TASK 1: BUY/SELL TRADE-MARKERS AUS EXTENDED SIGNALS
         buy_markers_added = 0
         sell_markers_added = 0
         
-        if 'buy_signal' in df.columns and 'sell_signal' in df.columns:
+        # Erst aus standard_signals (extended signals) - ECHTE TRADES
+        if standard_signals is not None and len(standard_signals) > 0:
+            try:
+                print(f"   🔍 Processing {len(standard_signals)} extended signals...")
+                
+                # BUY Actions (Blaue Dreiecke)
+                buy_signals = standard_signals[standard_signals['Action'] == 'buy']
+                if not buy_signals.empty:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=pd.to_datetime(buy_signals['Long Date detected']),
+                            y=buy_signals['Level Close'] * 0.95,  # 5% below price
+                            mode="markers",
+                            name="🔵 BUY Trade",
+                            marker=dict(
+                                color="blue",
+                                size=15,
+                                symbol="triangle-up",
+                                line=dict(width=2, color="darkblue")
+                            ),
+                            showlegend=True,
+                            hovertemplate="<b>BUY TRADE</b><br>Date: %{x}<br>Price: %{customdata:.2f}<br>Action: Buy<extra></extra>",
+                            customdata=buy_signals['Level Close']
+                        ),
+                        row=1, col=1
+                    )
+                    buy_markers_added = len(buy_signals)
+                
+                # SELL Actions (Orange Dreiecke)
+                sell_signals = standard_signals[standard_signals['Action'] == 'sell']
+                if not sell_signals.empty:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=pd.to_datetime(sell_signals['Long Date detected']),
+                            y=sell_signals['Level Close'] * 1.05,  # 5% above price
+                            mode="markers",
+                            name="🟠 SELL Trade",
+                            marker=dict(
+                                color="orange",
+                                size=15,
+                                symbol="triangle-down",
+                                line=dict(width=2, color="darkorange")
+                            ),
+                            showlegend=True,
+                            hovertemplate="<b>SELL TRADE</b><br>Date: %{x}<br>Price: %{customdata:.2f}<br>Action: Sell<extra></extra>",
+                            customdata=sell_signals['Level Close']
+                        ),
+                        row=1, col=1
+                    )
+                    sell_markers_added = len(sell_signals)
+                
+                print(f"   ✅ TASK 1 COMPLETED: {buy_markers_added} BUY + {sell_markers_added} SELL trade markers added!")
+                
+                # ✅ TASK 2: TRADE-LINIEN zwischen BUY und SELL
+                if buy_markers_added > 0 and sell_markers_added > 0:
+                    try:
+                        # Sortiere alle Trades chronologisch
+                        all_trades = standard_signals[standard_signals['Action'].isin(['buy', 'sell'])].copy()
+                        all_trades = all_trades.sort_values('Long Date detected')
+                        
+                        # Verbinde aufeinanderfolgende BUY-SELL Paare
+                        trade_lines = []
+                        current_buy = None
+                        
+                        for idx, trade in all_trades.iterrows():
+                            if trade['Action'] == 'buy' and current_buy is None:
+                                current_buy = trade
+                            elif trade['Action'] == 'sell' and current_buy is not None:
+                                # Verbindungslinie von BUY zu SELL
+                                buy_date = pd.to_datetime(current_buy['Long Date detected'])
+                                sell_date = pd.to_datetime(trade['Long Date detected'])
+                                buy_price = current_buy['Level Close']
+                                sell_price = trade['Level Close']
+                                
+                                # Profit/Loss berechnen
+                                pnl = sell_price - buy_price
+                                pnl_pct = (pnl / buy_price) * 100
+                                
+                                # Linie hinzufügen
+                                fig.add_trace(
+                                    go.Scatter(
+                                        x=[buy_date, sell_date],
+                                        y=[buy_price, sell_price],
+                                        mode="lines+text",
+                                        name=f"Trade Line",
+                                        line=dict(
+                                            color="green" if pnl > 0 else "red",
+                                            width=2,
+                                            dash="solid"
+                                        ),
+                                        text=["", f"€{pnl:+.0f} ({pnl_pct:+.1f}%)"],
+                                        textposition="middle right",
+                                        textfont=dict(size=10, color="black"),
+                                        showlegend=False,
+                                        hovertemplate="<b>TRADE</b><br>Buy: %{x[0]}<br>Sell: %{x[1]}<br>PnL: €%{customdata:+.2f}<extra></extra>",
+                                        customdata=[pnl]
+                                    ),
+                                    row=1, col=1
+                                )
+                                
+                                trade_lines.append((buy_date, sell_date, pnl))
+                                current_buy = None  # Reset für nächsten Trade
+                        
+                        print(f"   ✅ TASK 2 COMPLETED: {len(trade_lines)} trade lines with PnL added!")
+                        
+                    except Exception as e:
+                        print(f"   ❌ Task 2 (Trade Lines) error: {e}")
+                        
+            except Exception as e:
+                print(f"   ❌ Extended signals processing error: {e}")
+        
+        # Fallback: BUY/SELL signals aus DataFrame (falls extended signals nicht verfügbar)
+        elif 'buy_signal' in df.columns and 'sell_signal' in df.columns:
             # ✅ BUY signals (Blaue Dreiecke nach oben) - 5% BELOW LOW
             buy_mask = df['buy_signal'].notna() & (df['buy_signal'] == 1)
             if buy_mask.any():
@@ -503,30 +618,73 @@ def plotly_combined_chart_and_equity(
         
         print(f"   📊 TRADE markers: {buy_markers_added} BUY (5% below Low), {sell_markers_added} SELL (5% above High)")
         
-        # 5. EQUITY CURVES
+        # ✅ TASK 3: VERBESSERTE EQUITY CURVES mit Performance-Metriken
         if len(equity_curve) > 0:
+            # ✅ USE PROVIDED INITIAL CAPITAL, NOT AUTO-DETECTED FROM EQUITY CURVE
+            if initial_capital is None:
+                initial_capital = equity_curve[0] if len(equity_curve) > 0 else 10000
+                print(f"   ⚠️ Auto-detected Initial Capital: €{initial_capital}")
+            else:
+                print(f"   ✅ Using provided Initial Capital: €{initial_capital}")
+            
+            final_capital = equity_curve[-1] if len(equity_curve) > 0 else initial_capital
+            total_return = ((final_capital / initial_capital) - 1) * 100
+            
+            # Drawdown berechnen
+            running_max = pd.Series(equity_curve).expanding().max()
+            drawdown = (pd.Series(equity_curve) - running_max) / running_max * 100
+            max_drawdown = drawdown.min()
+            
             fig.add_trace(
                 go.Scatter(
                     x=df.index,
                     y=equity_curve,
                     mode="lines",
-                    name="💼 Strategy",
-                    line=dict(color="green", width=2)
+                    name=f"💼 Strategy ({total_return:+.1f}%, DD: {max_drawdown:.1f}%)",
+                    line=dict(color="green", width=3),
+                    hovertemplate="<b>STRATEGY EQUITY</b><br>Date: %{x}<br>Capital: €%{y:,.0f}<br>Return: %{customdata:.1f}%<extra></extra>",
+                    customdata=[(val/initial_capital - 1) * 100 for val in equity_curve]
                 ),
                 row=2, col=1
             )
+            
+            # Markiere Max Drawdown Punkt
+            max_dd_idx = drawdown.idxmin()
+            if max_dd_idx < len(df.index):
+                fig.add_trace(
+                    go.Scatter(
+                        x=[df.index[max_dd_idx]],
+                        y=[equity_curve[max_dd_idx]],
+                        mode="markers",
+                        name=f"📉 Max DD ({max_drawdown:.1f}%)",
+                        marker=dict(color="red", size=10, symbol="x"),
+                        showlegend=True,
+                        hovertemplate="<b>MAX DRAWDOWN</b><br>Date: %{x}<br>Capital: €%{y:,.0f}<br>Drawdown: %{customdata:.1f}%<extra></extra>",
+                        customdata=[max_drawdown]
+                    ),
+                    row=2, col=1
+                )
         
         if len(buyhold_curve) > 0:
+            # Buy&Hold Performance
+            initial_bh = buyhold_curve[0] if len(buyhold_curve) > 0 else initial_capital
+            final_bh = buyhold_curve[-1] if len(buyhold_curve) > 0 else initial_bh
+            bh_return = ((final_bh / initial_bh) - 1) * 100
+            
             fig.add_trace(
                 go.Scatter(
                     x=df.index,
                     y=buyhold_curve,
                     mode="lines",
-                    name="📈 Buy & Hold",
-                    line=dict(color="orange", width=2)
+                    name=f"📈 Buy & Hold ({bh_return:+.1f}%)",
+                    line=dict(color="orange", width=2, dash="dash"),
+                    hovertemplate="<b>BUY & HOLD</b><br>Date: %{x}<br>Capital: €%{y:,.0f}<br>Return: %{customdata:.1f}%<extra></extra>",
+                    customdata=[(val/initial_bh - 1) * 100 for val in buyhold_curve]
                 ),
                 row=2, col=1
             )
+            
+        print(f"   ✅ TASK 3 COMPLETED: Enhanced equity curves with performance metrics added!")
         
         # ✅ EQUITY Y-ACHSE 2.5x VERGRÖSSERN
         if len(equity_curve) > 0 or len(buyhold_curve) > 0:
@@ -541,20 +699,15 @@ def plotly_combined_chart_and_equity(
                 min_equity = min(all_equity_values)
                 max_equity = max(all_equity_values)
                 equity_range = max_equity - min_equity
-                equity_center = (min_equity + max_equity) / 2
-                # 0.5x größerer Y-Achsen-Bereich
-                expansion_factor = 1
-                expanded_range = equity_range * expansion_factor
                 
-                new_y_min = equity_center - expanded_range / 2
-                new_y_max = equity_center + expanded_range / 2
+                # ✅ FIX: Y-ACHSE IMMER BEI €0 STARTEN FÜR KORREKTE DARSTELLUNG
+                new_y_min = 0  # ALWAYS START AT ZERO
+                new_y_max = max_equity * 1.1  # 10% buffer above maximum
                 
-                # Stelle sicher, dass Y-Min nicht negativ wird (wenn Original positiv)
-                if min_equity >= 0 and new_y_min < 0:
-                    new_y_min = 0
-                    new_y_max = expanded_range
+                print(f"   💰 Equity Values: Min=€{min_equity:,.0f}, Max=€{max_equity:,.0f}")
+                print(f"   📊 Chart Y-Axis: €0 to €{new_y_max:,.0f} (always starts at zero)")
                 
-                # Anwenden der erweiterten Y-Achse
+                # Anwenden der korrigierten Y-Achse
                 fig.update_yaxes(
                     range=[new_y_min, new_y_max],
                     row=2, col=1
@@ -635,63 +788,128 @@ def open_all_charts_in_sequence():
 
 def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_bt):
     """
-    Create equity curve from matched trades
+    KORREKTE TÄGLICHE Equity über ganz df:
+    - Am BUY-Tag: Capital = Capital - Fees
+    - Während Long: Capital = Capital + Shares * (Close - Open) 
+    - Am SELL-Tag: Capital = Capital - Fees
+    - Danach konstant bis nächster BUY
     """
+    print(f"🔍 DEBUG: TÄGLICHE Equity über {len(df_bt)} Tage")
+    print(f"🔍 DEBUG: Initial Capital = €{initial_capital} (from parameter)")
+    print(f"🔍 DEBUG: Number of trades = {len(matched_trades)}")
+    
+    # ✅ FORCE CORRECT INITIAL CAPITAL - NO MORE 10000!
+    if initial_capital is None or initial_capital <= 0:
+        print(f"❌ ERROR: Invalid initial_capital={initial_capital}, using 1000 fallback")
+        current_capital = 1000.0  # XRP-EUR fallback
+    else:
+        current_capital = float(initial_capital)  # ✅ USE EXACT VALUE FROM PARAMETER
+    
+    print(f"🔍 DEBUG: Starting with current_capital = €{current_capital}")
+    
     equity_curve = []
-    current_capital = initial_capital
     position_shares = 0
-    position_price = 0
+    is_long = False
     trade_index = 0
+    
+    # Separiere komplette und offene Trades
     completed_trades = [t for t in matched_trades if not t.get('is_open', False)]
-    
-    for date in df_bt.index:
-        # Check for buy signal
-        if trade_index < len(completed_trades):
-            trade = completed_trades[trade_index]
-            buy_date = pd.to_datetime(trade.get('buy_date', ''))
-            
-            if date.date() == buy_date.date() and position_shares == 0:
-                position_shares = trade.get('shares', 0)
-                position_price = trade.get('buy_price', 0)
-                # Don't subtract capital here - we track total portfolio value
-        
-        # Check for sell signal
-        if trade_index < len(completed_trades) and position_shares > 0:
-            trade = completed_trades[trade_index]
-            sell_date = pd.to_datetime(trade.get('sell_date', ''))
-            
-            if date.date() == sell_date.date():
-                # Update capital with realized PnL
-                current_capital += trade.get('pnl', 0)
-                position_shares = 0
-                position_price = 0
-                trade_index += 1
-        
-        # Calculate current equity (cash + position value)
-        if position_shares > 0:
-            current_price = df_bt.loc[date, 'Close']
-            # Cash portion after buying
-            cash_portion = current_capital - (position_shares * position_price)
-            # Current position value
-            position_value = position_shares * current_price
-            equity = cash_portion + position_value
-        else:
-            equity = current_capital
-        
-        equity_curve.append(equity)
-    
-    # Handle open position if exists
     open_trades = [t for t in matched_trades if t.get('is_open', False)]
-    if open_trades and equity_curve:
-        open_trade = open_trades[0]
-        open_shares = open_trade.get('shares', 0)
-        open_price = open_trade.get('buy_price', 0)
-        current_price = df_bt['Close'].iloc[-1]
+    
+    print(f"📊 {len(completed_trades)} komplette, {len(open_trades)} offene Trades")
+    
+    for i, date in enumerate(df_bt.index):
+        today_open = df_bt.loc[date, 'Open']
+        today_close = df_bt.loc[date, 'Close']
         
-        # Adjust final equity for open position
-        cash_after_buy = equity_curve[-1] - (open_shares * open_price)
-        open_position_value = open_shares * current_price
-        equity_curve[-1] = cash_after_buy + open_position_value
+        # ✅ 1. PRÜFE BUY-SIGNAL (komplette Trades)
+        if trade_index < len(completed_trades) and not is_long:
+            trade = completed_trades[trade_index]
+            buy_date = pd.to_datetime(trade.get('buy_date', '')).date()
+            
+            if date.date() == buy_date:
+                # BUY: Schätze Fees basierend auf Trade-Daten
+                position_shares = trade.get('shares', 0)
+                buy_price = trade.get('buy_price', 0)
+                total_pnl = trade.get('pnl', 0)
+                sell_price = trade.get('sell_price', 0)
+                
+                # Schätze Fees: Total PnL = Shares * (Sell - Buy) - Fees
+                theoretical_pnl = position_shares * (sell_price - buy_price)
+                estimated_fees = theoretical_pnl - total_pnl if theoretical_pnl > total_pnl else 0
+                buy_fees = estimated_fees / 2  # Verteile auf Buy und Sell
+                
+                current_capital -= buy_fees  # Fees abziehen
+                is_long = True
+                
+                if i < 5 or i > len(df_bt) - 5:
+                    print(f"   📈 BUY {date.date()}: {position_shares:.4f} shares, Fees: €{buy_fees:.2f}, Capital: €{current_capital:.0f}")
+        
+        # ✅ 2. WÄHREND LONG-POSITION: Tägliche P&L
+        if is_long and position_shares > 0:
+            # Capital = Capital + Shares * (Close - Open)
+            daily_pnl = position_shares * (today_close - today_open)
+            current_capital += daily_pnl
+            
+            if i < 3 or i > len(df_bt) - 3 or (i % 100 == 0):
+                print(f"   📊 LONG {date.date()}: {position_shares:.4f} * (€{today_close:.2f} - €{today_open:.2f}) = €{daily_pnl:.2f}, Capital: €{current_capital:.0f}")
+        
+        # ✅ 3. PRÜFE SELL-SIGNAL (komplette Trades)
+        if trade_index < len(completed_trades) and is_long:
+            trade = completed_trades[trade_index]
+            sell_date = pd.to_datetime(trade.get('sell_date', '')).date()
+            
+            if date.date() == sell_date:
+                # SELL: Verwende geschätzte Fees
+                total_pnl = trade.get('pnl', 0)
+                buy_price = trade.get('buy_price', 0)
+                sell_price = trade.get('sell_price', 0)
+                theoretical_pnl = position_shares * (sell_price - buy_price)
+                estimated_fees = theoretical_pnl - total_pnl if theoretical_pnl > total_pnl else 0
+                sell_fees = estimated_fees / 2
+                
+                current_capital -= sell_fees  # Fees abziehen
+                position_shares = 0
+                is_long = False
+                trade_index += 1
+                
+                if i < 5 or i > len(df_bt) - 5:
+                    print(f"   💰 SELL {date.date()}: Fees: €{sell_fees:.2f}, Capital: €{current_capital:.0f}")
+        
+        # ✅ 4. HANDLE OFFENE TRADES (nach allen kompletten Trades)
+        if trade_index >= len(completed_trades) and not is_long:
+            for open_trade in open_trades:
+                open_buy_date = pd.to_datetime(open_trade.get('buy_date', '')).date()
+                
+                if date.date() == open_buy_date:
+                    # OPEN BUY: Schätze Buy-Fees
+                    position_shares = open_trade.get('shares', 0)
+                    buy_price = open_trade.get('buy_price', 0)
+                    estimated_buy_fees = position_shares * buy_price * 0.001  # 0.1% geschätzt
+                    
+                    current_capital -= estimated_buy_fees
+                    is_long = True
+                    
+                    if i < 5 or i > len(df_bt) - 5:
+                        print(f"   🔓 OPEN BUY {date.date()}: {position_shares:.4f} shares, Fees: €{estimated_buy_fees:.2f}")
+                    break
+        
+        # Equity-Wert für heute hinzufügen
+        equity_curve.append(current_capital)
+    
+    # Statistiken
+    unique_vals = len(set([int(v/50)*50 for v in equity_curve]))
+    variation = (max(equity_curve) - min(equity_curve)) / initial_capital * 100
+    
+    print(f"✅ TÄGLICHE Equity: Start €{equity_curve[0]:.0f} → Ende €{equity_curve[-1]:.0f}")
+    print(f"📊 Variation: {variation:.1f}%, Unique Werte: {unique_vals}")
+    
+    if unique_vals > 50:
+        print("   ✅ Equity variiert TÄGLICH korrekt!")
+    elif unique_vals > 10:
+        print("   ⚠️ Equity variiert teilweise")
+    else:
+        print("   ❌ Equity variiert zu wenig")
     
     return equity_curve
 

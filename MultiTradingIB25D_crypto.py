@@ -361,37 +361,15 @@ def simulate_trades_compound_extended(extended_df, market_df, starting_capital=1
     trades = []
     buy_price = buy_date = prev_cap = None
     for _, row in extended_df.iterrows():
-        # Versuche zuerst 'Long Action', dann 'Action' als Fallback
         action = row.get('Long Action')
-        if pd.isna(action) or action == 'None':
-            action = row.get('Action')
-        
         exec_date = row.get('Long Date detected')
         if pd.isna(exec_date):
             continue
-            
-        # Handle date-only strings vs full timestamps
-        if isinstance(exec_date, str) and len(exec_date) <= 10:
-            # Date-only string like '2025-07-28'
-            exec_date_start = pd.to_datetime(exec_date + ' 00:00:00')
-            day_data = market_df[market_df.index.date == exec_date_start.date()]
-            if len(day_data) > 0:
-                price = float(day_data["Close"].iloc[0])
-            else:
-                continue
+        if exec_date in market_df.index:
+            price = float(market_df.loc[exec_date, "Close"])
         else:
-            # Full timestamp or timestamp object
-            if isinstance(exec_date, str):
-                exec_date = pd.to_datetime(exec_date)
-            
-            if exec_date in market_df.index:
-                price = float(market_df.loc[exec_date, "Close"])
-            else:
-                idx = market_df.index.get_indexer([exec_date], method='nearest')[0]
-                if idx != -1:
-                    price = float(market_df.iloc[idx]["Close"])
-                else:
-                    continue
+            idx = market_df.index.searchsorted(exec_date)
+            price = float(market_df.iloc[idx]["Close"]) if idx < len(market_df.index) else None
         if price is None:
             continue
         if action == 'buy' and not position_active:
@@ -1173,7 +1151,7 @@ def show_all_equity_curves_and_stats():
 
 # Am Ende von both_backtesting_multi(ib) oder als eigenen Modus aufrufen:
 # show_all_equity_curves_and_stats()
-def get_today_minute_data(ib, contract, config):
+def get_today_minute_data(ib, contract):
     """
     Holt die Minutendaten für den aktuellen Tag von IB.
     Gibt ein DataFrame mit Spalten open, high, low, close, volume zurück.
@@ -1523,7 +1501,7 @@ def live_trading_loop(ib, intervals=["5 mins", "15 mins", "30 mins", "1 hour"], 
         print("Live-Trading-Loop beendet.")
         ib.disconnect()
 
-def download_ib_minute_data(ib, symbol, exchange, currency, date, end_time="15:45:00", n_bars=100, filename=None, config=None):
+def download_ib_minute_data(ib, symbol, exchange, currency, date, end_time="15:45:00", n_bars=100, filename=None):
     """
     Lädt n_bars Minutendaten für ein Symbol bis zu einer bestimmten Uhrzeit an einem Tag.
     Speichert als CSV, falls filename angegeben.
@@ -1544,8 +1522,7 @@ def download_ib_minute_data(ib, symbol, exchange, currency, date, end_time="15:4
     durationStr = f"{duration_seconds} S"
 
     print(f"Lade {n_bars} Minutendaten für {symbol} bis {end_time} am {date_str} ...")
-    # Verwende symbol und exchange Parameter direkt (nicht config)
-    contract = Crypto(symbol, exchange, currency)
+    contract = Crypto(config["symbol"], config["exchange"], "USD")
     whatToShow = "AGGTRADES"
 
     bars = ib.reqHistoricalData(
@@ -1825,7 +1802,7 @@ if __name__ == "__main__":
         trading_multi(ib)
        # wait_and_trade_at_1540(ib)
     elif mode == "daytrading":
-        intervals = sys.argv[2:] if len(sys.argv) > 2 else ["5 mins", "15 mins", "30 mins", "1 hour"]
+        #intervals = sys.argv[2:] if len(sys.argv) > 2 else ["5 mins", "15 mins", "30 mins", "1 hour"]
         daytrading_multi(ib, intervals=intervals)
         print("Daytrading abgeschlossen. Verbindung bleibt bestehen. Beenden mit STRG+C.")
         while True:
