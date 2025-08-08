@@ -52,7 +52,7 @@ base_dir = "C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading1"
 
 def load_crypto_data_yf(symbol, backtest_years=1, max_retries=3):
     """
-    Lädt Crypto-Daten aus existierenden CSV-Dateien
+    Lädt Crypto-Daten aus existierenden CSV-Dateien und begrenzt auf backtest_years
     """
     try:
         # CSV-Datei Namen basierend auf existierendem Format
@@ -65,8 +65,17 @@ def load_crypto_data_yf(symbol, backtest_years=1, max_retries=3):
             print(f"Loading {symbol} from CSV cache ({csv_filename}) - Age: {file_age.days} days")
             
             try:
-                df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
-                print(f"✅ CSV geladen: {len(df)} Zeilen ({df.index[0].date()} bis {df.index[-1].date()})")
+                df_full = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+                print(f"📊 CSV vollständig geladen: {len(df_full)} Zeilen ({df_full.index[0].date()} bis {df_full.index[-1].date()})")
+                
+                # Begrenze auf backtest_years (aus config.py)
+                end_date = df_full.index[-1]
+                start_date = end_date - timedelta(days=int(365 * backtest_years))
+                df = df_full[df_full.index >= start_date].copy()
+                
+                print(f"📅 Begrenzt auf {backtest_years} Jahr(e): {len(df)} Zeilen ({df.index[0].date()} bis {df.index[-1].date()})")
+                print(f"🔍 Reduziert von {len(df_full)} auf {len(df)} Tage ({len(df_full)-len(df)} Tage entfernt)")
+                
                 return df
             except Exception as e:
                 print(f"❌ CSV-Lesefehler: {e}")
@@ -506,13 +515,14 @@ def main_backtest_with_analysis():
                         except:
                             continue
                 
-                # ✅ EQUITY CURVES BERECHNUNG - USE CORRECT INITIAL CAPITAL FROM CRYPTO_TICKERS
-                # Get the ticker config to extract the correct initial capital
+                # Get the ticker config to extract the correct initial capital and trade_on
                 from crypto_tickers import crypto_tickers
                 ticker_config = crypto_tickers.get(symbol, {})
                 initial_capital = ticker_config.get('initialCapitalLong', 10000)
+                trade_on = ticker_config.get('trade_on', 'Close')  # ✅ Get trade_on mode
                 
                 print(f"💰 DEBUG: Using Initial Capital €{initial_capital} for {symbol} (from crypto_tickers)")
+                print(f"📊 DEBUG: Trade Mode = {trade_on} (from crypto_tickers)")
                 
                 # 1. Strategy Equity Curve aus matched_trades
                 if not matched_trades.empty:
@@ -532,8 +542,8 @@ def main_backtest_with_analysis():
                             if key in ['Entry Date', 'Exit Date', 'Entry Price', 'Exit Price', 'Shares', 'PnL']:
                                 print(f"     {key}: {value}")
                     
-                    # Berechne Strategy Equity Curve mit NEUER TÄGLICHER Funktion
-                    equity_curve = create_equity_curve_from_matched_trades(trades_list, initial_capital, df)
+                    # Berechne Strategy Equity Curve mit NEUER TÄGLICHER Funktion - ✅ INCLUDE TRADE_ON
+                    equity_curve = create_equity_curve_from_matched_trades(trades_list, initial_capital, df, trade_on)
                     
                     # Debug equity alignment (TEMPORARILY DISABLED)
                     # equity_ok = debug_equity_alignment(df, equity_curve)
@@ -628,14 +638,14 @@ def main_backtest_with_analysis():
 
 def run_live_backtest_analysis():
     """
-    LIVE BACKTEST ANALYSIS - Integriert in crypto_backtesting_module.py
-    Führt alle Backtests aus und erstellt HTML-Report mit robusten Charts
+    UNIFIED LIVE BACKTEST ANALYSIS - Kombiniert beide Reports
+    Führt alle Backtests aus und erstellt vereinigten HTML-Report mit Strategy und Live Analysis
     """
     try:
         import webbrowser
         from datetime import datetime, timedelta
         
-        print("🚀 LIVE CRYPTO BACKTEST STARTING...")
+        print("🚀 UNIFIED LIVE CRYPTO BACKTEST STARTING...")
         print(f"⏰ Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         # Update CSV files with real-time data
@@ -656,49 +666,62 @@ def run_live_backtest_analysis():
             result = run_backtest(ticker, config)
             all_results[ticker] = result
         
-        # Create comprehensive HTML report
-        print("\n📝 Creating comprehensive HTML report...")
+        # Create UNIFIED comprehensive HTML report
+        print("\n📝 Creating UNIFIED comprehensive HTML report...")
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # HTML template with styling
+        # Enhanced HTML template with styling
         html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>LIVE Crypto Backtest Report {timestamp}</title>
+            <title>🚀 UNIFIED Crypto Trading Analysis Report {timestamp}</title>
             <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
-                .container {{ max-width: 1200px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 10px; }}
-                .header {{ text-align: center; color: #2c3e50; margin-bottom: 30px; }}
+                body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; line-height: 1.6; }}
+                .container {{ max-width: 1400px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 10px; }}
+                .header {{ text-align: center; color: #2c3e50; margin-bottom: 30px; background: linear-gradient(45deg, #3498db, #2ecc71); color: white; padding: 20px; border-radius: 10px; }}
                 .summary {{ background-color: #e8f4fd; padding: 20px; border-radius: 8px; margin-bottom: 30px; }}
-                .ticker-section {{ margin-bottom: 40px; border-bottom: 2px solid #eee; padding-bottom: 20px; }}
-                .ticker-header {{ color: #27ae60; font-size: 24px; margin-bottom: 15px; }}
+                .ticker-section {{ margin-bottom: 40px; border-bottom: 3px solid #eee; padding-bottom: 20px; page-break-inside: avoid; }}
+                .ticker-header {{ color: #27ae60; font-size: 24px; margin-bottom: 15px; background: #ecf0f1; padding: 15px; border-radius: 8px; }}
                 .metrics {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }}
-                .metric {{ background-color: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; }}
+                .metric {{ background-color: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; border: 2px solid #dee2e6; }}
                 .metric-value {{ font-size: 20px; font-weight: bold; color: #2c3e50; }}
                 .metric-label {{ font-size: 14px; color: #7f8c8d; margin-top: 5px; }}
-                .trades-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-                .trades-table th, .trades-table td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                .trades-table th {{ background-color: #3498db; color: white; }}
+                .trades-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+                .trades-table th, .trades-table td {{ border: 1px solid #ddd; padding: 10px; text-align: left; }}
+                .trades-table th {{ background-color: #3498db; color: white; font-weight: bold; text-align: center; }}
                 .trades-table tr:nth-child(even) {{ background-color: #f2f2f2; }}
+                .trades-table tr:hover {{ background-color: #d5dbdb; }}
                 .buy-row {{ background-color: #d5f4e6; }}
                 .sell-row {{ background-color: #ffeaa7; }}
-                .chart-section {{ margin: 20px 0; text-align: center; }}
+                .chart-section {{ margin: 20px 0; text-align: center; background: #f8f9fa; padding: 15px; border-radius: 8px; }}
+                .strategy-section {{ background: #fff3cd; padding: 15px; margin: 15px 0; border-radius: 8px; border-left: 4px solid #ffc107; }}
+                .signal-badge {{ display: inline-block; margin: 3px; padding: 6px 12px; border-radius: 15px; color: white; font-size: 12px; font-weight: bold; }}
+                .buy-signal {{ background: #3498db; }}
+                .sell-signal {{ background: #e74c3c; }}
+                .support-signal {{ background: #27ae60; }}
+                .resistance-signal {{ background: #e67e22; }}
+                .positive {{ color: #27ae60; font-weight: bold; }}
+                .negative {{ color: #e74c3c; font-weight: bold; }}
+                .neutral {{ color: #f39c12; font-weight: bold; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🚀 LIVE Crypto Backtest Report</h1>
+                    <h1>🚀 UNIFIED Crypto Trading Analysis Report</h1>
+                    <h2>📊 Live Analysis + Strategy Overview</h2>
                     <p>Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
                 </div>
         """
         
-        # Summary section
+        # Enhanced Summary section with Strategy Analysis
         total_pnl = 0
         total_trades = 0
         successful_backtests = 0
+        best_performer = {"ticker": "N/A", "pnl": 0}
+        worst_performer = {"ticker": "N/A", "pnl": 0}
         
         for ticker, result in all_results.items():
             if result and isinstance(result, dict) and result.get('success'):
@@ -708,6 +731,12 @@ def run_live_backtest_analysis():
                 total_pnl += pnl_pct
                 successful_backtests += 1
                 
+                # Track best and worst performers
+                if pnl_pct > best_performer["pnl"]:
+                    best_performer = {"ticker": ticker, "pnl": pnl_pct}
+                if pnl_pct < worst_performer["pnl"]:
+                    worst_performer = {"ticker": ticker, "pnl": pnl_pct}
+                
                 trades_df = result.get('matched_trades', pd.DataFrame())
                 if not trades_df.empty:
                     total_trades += len(trades_df)
@@ -716,25 +745,33 @@ def run_live_backtest_analysis():
         
         html_content += f"""
                 <div class="summary">
-                    <h2>📊 Portfolio Summary</h2>
+                    <h2>📊 Unified Portfolio Summary</h2>
                     <div class="metrics">
                         <div class="metric">
                             <div class="metric-value">{successful_backtests}</div>
                             <div class="metric-label">Active Tickers</div>
                         </div>
                         <div class="metric">
-                            <div class="metric-value">{avg_pnl:.2f}%</div>
+                            <div class="metric-value {'positive' if avg_pnl > 0 else 'negative' if avg_pnl < 0 else 'neutral'}">{avg_pnl:.2f}%</div>
                             <div class="metric-label">Average Return</div>
                         </div>
                         <div class="metric">
                             <div class="metric-value">{total_trades}</div>
                             <div class="metric-label">Total Trades</div>
                         </div>
+                        <div class="metric">
+                            <div class="metric-value {'positive' if best_performer['pnl'] > 0 else 'neutral'}">{best_performer['ticker']}</div>
+                            <div class="metric-label">Best Performer ({best_performer['pnl']:.2f}%)</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value {'negative' if worst_performer['pnl'] < 0 else 'neutral'}">{worst_performer['ticker']}</div>
+                            <div class="metric-label">Worst Performer ({worst_performer['pnl']:.2f}%)</div>
+                        </div>
                     </div>
                 </div>
         """
         
-        # Ticker sections with charts
+        # Enhanced Ticker sections with Strategy + Live Analysis
         for ticker, result in all_results.items():
             if not result or not isinstance(result, dict) or not result.get('success'):
                 continue
@@ -745,12 +782,21 @@ def run_live_backtest_analysis():
             total_return_pct = ((final_capital / initial_capital - 1) * 100) if initial_capital > 0 else 0
             
             matched_trades = result.get('matched_trades', pd.DataFrame())
+            ext_signals = result.get('ext_signals', pd.DataFrame())
             optimal_p = result.get('optimal_past_window', 'N/A')
             optimal_tw = result.get('optimal_trade_window', 'N/A')
             
+            # Calculate win rate
+            winning_trades = 0
+            losing_trades = 0
+            if not matched_trades.empty and 'Net PnL' in matched_trades.columns:
+                winning_trades = len(matched_trades[matched_trades['Net PnL'] > 0])
+                losing_trades = len(matched_trades[matched_trades['Net PnL'] < 0])
+            win_rate = (winning_trades / (winning_trades + losing_trades) * 100) if (winning_trades + losing_trades) > 0 else 0
+            
             html_content += f"""
                 <div class="ticker-section">
-                    <h2 class="ticker-header">💎 {ticker}</h2>
+                    <h2 class="ticker-header">💎 {ticker} - Complete Analysis</h2>
                     
                     <div class="metrics">
                         <div class="metric">
@@ -762,19 +808,77 @@ def run_live_backtest_analysis():
                             <div class="metric-label">Final Capital</div>
                         </div>
                         <div class="metric">
-                            <div class="metric-value">{total_return_pct:.2f}%</div>
+                            <div class="metric-value {'positive' if total_return_pct > 0 else 'negative' if total_return_pct < 0 else 'neutral'}">{total_return_pct:.2f}%</div>
                             <div class="metric-label">Total Return</div>
                         </div>
                         <div class="metric">
                             <div class="metric-value">{len(matched_trades)}</div>
-                            <div class="metric-label">Trades</div>
+                            <div class="metric-label">Total Trades</div>
                         </div>
                         <div class="metric">
                             <div class="metric-value">p={optimal_p}, tw={optimal_tw}</div>
                             <div class="metric-label">Optimal Parameters</div>
                         </div>
+                        <div class="metric">
+                            <div class="metric-value {'positive' if win_rate > 50 else 'negative' if win_rate < 50 else 'neutral'}">{win_rate:.1f}%</div>
+                            <div class="metric-label">Win Rate ({winning_trades}W/{losing_trades}L)</div>
+                        </div>
                     </div>
             """
+            
+            # Strategy Analysis Section
+            if not ext_signals.empty:
+                # Signal Counts
+                buy_signals = ext_signals[ext_signals['Action'] == 'buy'] if 'Action' in ext_signals.columns else pd.DataFrame()
+                sell_signals = ext_signals[ext_signals['Action'] == 'sell'] if 'Action' in ext_signals.columns else pd.DataFrame()
+                support_levels = ext_signals[ext_signals['Supp/Resist'] == 'support'] if 'Supp/Resist' in ext_signals.columns else pd.DataFrame()
+                resistance_levels = ext_signals[ext_signals['Supp/Resist'] == 'resistance'] if 'Supp/Resist' in ext_signals.columns else pd.DataFrame()
+                
+                html_content += f"""
+                    <div class="strategy-section">
+                        <h3>🎯 Strategy Analysis - Extended Signals</h3>
+                        <div style='margin:15px 0'>
+                            <span class='signal-badge buy-signal'>🔵 {len(buy_signals)} BUY</span>
+                            <span class='signal-badge sell-signal'>🟠 {len(sell_signals)} SELL</span>
+                            <span class='signal-badge support-signal'>🟢 {len(support_levels)} SUPPORT</span>
+                            <span class='signal-badge resistance-signal'>🔴 {len(resistance_levels)} RESISTANCE</span>
+                        </div>
+                """
+                
+                # Recent Signals (last 5)
+                recent_signals = ext_signals.tail(5) if not ext_signals.empty else pd.DataFrame()
+                if not recent_signals.empty:
+                    html_content += """
+                        <h4>📍 Latest 5 Extended Signals</h4>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Action</th>
+                                <th>Level</th>
+                                <th>Signal</th>
+                            </tr>
+                    """
+                    
+                    for _, signal in recent_signals.iterrows():
+                        date = signal.get('Long Date detected', 'N/A')
+                        sig_type = signal.get('Supp/Resist', 'N/A')
+                        action = signal.get('Action', 'N/A')
+                        level = signal.get('Level high/low', 0)
+                        extended = signal.get('Long Signal Extended', False)
+                        
+                        html_content += f"""
+                            <tr>
+                                <td>{date}</td>
+                                <td>{sig_type}</td>
+                                <td><strong>{action.upper() if action != 'N/A' else 'NONE'}</strong></td>
+                                <td>€{level:.4f}</td>
+                                <td>{'✅' if extended else '❌'}</td>
+                            </tr>
+                        """
+                    
+                    html_content += "</table>"
+                html_content += "</div>"
             
             # Create interactive chart using robust function
             try:
@@ -822,7 +926,7 @@ def run_live_backtest_analysis():
                         html_content += f"""
                             <div class="chart-section">
                                 <h3>📈 Interactive Chart</h3>
-                                <p>📊 Chart saved as <a href="{chart_filename}" target="_blank">{chart_filename}</a></p>
+                                <p>📊 <a href="{chart_filename}" target="_blank">🔗 Click here to view interactive chart for {ticker}</a></p>
                             </div>
                         """
                         print(f"   ✅ Chart created for {ticker}")
@@ -846,7 +950,7 @@ def run_live_backtest_analysis():
                     </div>
                 """
             
-            # Recent trades (last 14 days)
+            # Enhanced Recent trades (last 14 days) with Shares and Commission
             if not matched_trades.empty:
                 # Filter for last 14 days
                 cutoff_date = datetime.now() - timedelta(days=14)
@@ -855,7 +959,7 @@ def run_live_backtest_analysis():
                 
                 if not recent_trades.empty:
                     html_content += f"""
-                        <h3>📅 Recent Trades (Last 14 Days)</h3>
+                        <h3>📅 Recent Live Trades (Last 14 Days)</h3>
                         <table class="trades-table">
                             <tr>
                                 <th>Entry Date</th>
@@ -863,7 +967,9 @@ def run_live_backtest_analysis():
                                 <th>Action</th>
                                 <th>Entry Price</th>
                                 <th>Exit Price</th>
-                                <th>Quantity</th>
+                                <th>Shares/Quantity</th>
+                                <th>Commission</th>
+                                <th>Gross PnL</th>
                                 <th>Net PnL</th>
                                 <th>Status</th>
                             </tr>
@@ -873,20 +979,67 @@ def run_live_backtest_analysis():
                         status = trade.get('Status', 'CLOSED')
                         row_class = "buy-row" if status == "OPEN" else "sell-row"
                         
+                        # Extract trade details
+                        entry_date = trade.get('Entry Date', 'N/A')
+                        exit_date = trade.get('Exit Date', 'N/A') if status == 'CLOSED' else 'Current'
+                        entry_price = trade.get('Entry Price', 0)
+                        exit_price = trade.get('Exit Price', 0)
+                        quantity = trade.get('Quantity', 0)
+                        commission = trade.get('Commission', 0)
+                        gross_pnl = trade.get('PnL', 0)
+                        net_pnl = trade.get('Net PnL', 0)
+                        
+                        # Determine action based on status and PnL
+                        if status == "OPEN":
+                            action = "🔓 BUY (OPEN)"
+                        else:
+                            action = "🔒 BUY → SELL"
+                        
                         html_content += f"""
                             <tr class="{row_class}">
-                                <td>{trade.get('Entry Date', 'N/A')}</td>
-                                <td>{trade.get('Exit Date', 'N/A')}</td>
-                                <td><strong>{"BUY" if status == "OPEN" else "SELL"}</strong></td>
-                                <td>€{trade.get('Entry Price', 0):.4f}</td>
-                                <td>€{trade.get('Exit Price', 0):.4f}</td>
-                                <td>{trade.get('Quantity', 0):,.4f}</td>
-                                <td>€{trade.get('Net PnL', 0):,.2f}</td>
+                                <td>{entry_date}</td>
+                                <td>{exit_date}</td>
+                                <td><strong>{action}</strong></td>
+                                <td>€{entry_price:.4f}</td>
+                                <td>€{exit_price:.4f}</td>
+                                <td>{quantity:,.4f}</td>
+                                <td>€{commission:.2f}</td>
+                                <td class="{'positive' if gross_pnl > 0 else 'negative' if gross_pnl < 0 else 'neutral'}">€{gross_pnl:,.2f}</td>
+                                <td class="{'positive' if net_pnl > 0 else 'negative' if net_pnl < 0 else 'neutral'}">€{net_pnl:,.2f}</td>
                                 <td>{status}</td>
                             </tr>
                         """
                     
                     html_content += "</table>"
+                    
+                    # Trade Summary
+                    total_net_pnl = recent_trades['Net PnL'].sum() if 'Net PnL' in recent_trades.columns else 0
+                    total_commission = recent_trades['Commission'].sum() if 'Commission' in recent_trades.columns else 0
+                    total_quantity = recent_trades['Quantity'].sum() if 'Quantity' in recent_trades.columns else 0
+                    
+                    html_content += f"""
+                        <div class="summary" style="margin-top:15px;">
+                            <h4>📊 14-Day Trading Summary</h4>
+                            <div class="metrics">
+                                <div class="metric">
+                                    <div class="metric-value">{len(recent_trades)}</div>
+                                    <div class="metric-label">Recent Trades</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value {'positive' if total_net_pnl > 0 else 'negative' if total_net_pnl < 0 else 'neutral'}">€{total_net_pnl:,.2f}</div>
+                                    <div class="metric-label">Net PnL</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">€{total_commission:.2f}</div>
+                                    <div class="metric-label">Total Fees</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">{total_quantity:,.4f}</div>
+                                    <div class="metric-label">Total Volume</div>
+                                </div>
+                            </div>
+                        </div>
+                    """
                 else:
                     html_content += "<p>ℹ️ No trades in the last 14 days</p>"
             else:
@@ -900,12 +1053,13 @@ def run_live_backtest_analysis():
         </html>
         """
         
-        # Save HTML report
-        report_filename = f"LIVE_backtest_report_{timestamp}.html"
+        # Save UNIFIED HTML report in reports folder
+        os.makedirs("reports", exist_ok=True)  # ✅ Ensure reports folder exists
+        report_filename = f"reports/UNIFIED_crypto_report_{timestamp}.html"
         with open(report_filename, 'w', encoding='utf-8') as f:
             f.write(html_content)
         
-        print(f"✅ HTML report saved: {report_filename}")
+        print(f"✅ UNIFIED HTML report saved: {report_filename}")
         
         # Open in browser
         try:
@@ -1659,8 +1813,10 @@ def run_backtest(symbol, config):
         print(f"💸 Commission Rate: {commission_rate*100}%")
         print(f"🔍 DEBUG: initial_capital = {initial_capital} (from config key 'initialCapitalLong')")  # DEBUG
         
-        # Daten laden - 1 Jahr
-        df = load_crypto_data_yf(symbol, 1)
+        # Daten laden - aus config.py
+        from config import backtest_years
+        print(f"📅 Backtest Zeitraum: {backtest_years} Jahr(e) (aus config.py)")
+        df = load_crypto_data_yf(symbol, backtest_years)
         if df is None or df.empty:
             print(f"❌ Keine Daten für {symbol}")
             return False
@@ -1770,9 +1926,9 @@ def run_backtest(symbol, config):
                 }
                 trades_list.append(trade_dict)
             
-            # Verwende existierende Funktion
+            # Verwende existierende Funktion - ✅ INCLUDE TRADE_ON
             equity_curve_values = create_equity_curve_from_matched_trades(
-                trades_list, initial_capital, df
+                trades_list, initial_capital, df, trade_on
             )
             
             print(f"📊 Täglich Equity Curve: {len(equity_curve_values)} Werte")

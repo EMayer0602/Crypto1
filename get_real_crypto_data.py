@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timedelta
 import os
 import time
+import yfinance as yf
 
 def get_real_crypto_data_coingecko():
     """
@@ -41,7 +42,20 @@ def get_real_crypto_data_coingecko():
                 'interval': 'daily'
             }
             
-            response = requests.get(url, params=params, timeout=15)
+            # Retry logic for rate limiting
+            max_retries = 3
+            for attempt in range(max_retries):
+                response = requests.get(url, params=params, timeout=15)
+                
+                if response.status_code == 200:
+                    break
+                elif response.status_code == 429:
+                    print(f"   ⏳ Rate limited (attempt {attempt+1}/{max_retries}), waiting 10 seconds...")
+                    time.sleep(10)
+                else:
+                    print(f"   ❌ API Error: {response.status_code} (attempt {attempt+1}/{max_retries})")
+                    if attempt < max_retries - 1:
+                        time.sleep(5)
             
             if response.status_code == 200:
                 data = response.json()
@@ -78,15 +92,82 @@ def get_real_crypto_data_coingecko():
                     print(f"      {row['Date']}: €{row['Close']:.2f}")
                 
             else:
-                print(f"   ❌ CoinGecko API Error: {response.status_code}")
+                print(f"   ❌ CoinGecko failed after {max_retries} attempts")
+                
+                # Fallback to Yahoo Finance for XRP specifically
+                if symbol == "XRP-EUR":
+                    print(f"   🔄 Fallback: Using Yahoo Finance for {symbol}...")
+                    try:
+                        end_date = datetime.now()
+                        start_date = end_date - timedelta(days=10)  # Last 10 days
+                        
+                        stock = yf.Ticker(symbol)
+                        df = stock.history(start=start_date, end=end_date, interval='1d')
+                        
+                        if not df.empty:
+                            price_data = []
+                            for date, row in df.iterrows():
+                                price_data.append({
+                                    'Date': date.date(),
+                                    'Open': row['Open'],
+                                    'High': row['High'],
+                                    'Low': row['Low'],
+                                    'Close': row['Close'],
+                                    'Volume': row['Volume'],
+                                    'Source': 'YahooFinance_Fallback'
+                                })
+                            
+                            results[symbol] = price_data
+                            print(f"   ✅ Fallback successful: {len(price_data)} Tage von Yahoo Finance")
+                            
+                            # Zeige letzte 3 Tage
+                            for row in price_data[-3:]:
+                                print(f"      {row['Date']}: €{row['Close']:.2f} (YF)")
+                        
+                    except Exception as yf_error:
+                        print(f"   ❌ Yahoo Finance Fallback failed: {yf_error}")
                 
         except Exception as e:
             print(f"   ❌ {symbol}: Fehler - {e}")
         
-        # Rate Limiting
-        time.sleep(1)
+        # Rate Limiting - increase delay for API limits
+        time.sleep(3)  # Increased from 1 to 3 seconds
     
     return results
+
+def download_missing_csv(symbol):
+    """Lädt fehlende CSV-Datei herunter"""
+    try:
+        print(f"📥 Lade fehlende {symbol} Daten von Yahoo Finance...")
+        
+        # 1 Jahr Daten holen
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=400)  # Mehr als 1 Jahr für Sicherheit
+        
+        # Yahoo Finance Daten holen
+        stock = yf.Ticker(symbol)
+        df = stock.history(start=start_date, end=end_date, interval='1d')
+        
+        if df.empty:
+            print(f"❌ Keine Daten für {symbol} von Yahoo Finance")
+            return False
+            
+        # Index als Date column, nur OHLCV behalten
+        df.index.name = 'Date'
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        
+        # CSV speichern
+        filename = f"{symbol}_daily.csv"
+        df.to_csv(filename)
+        
+        print(f"✅ {filename} heruntergeladen mit {len(df)} Zeilen")
+        print(f"   Zeitraum: {df.index.min().date()} bis {df.index.max().date()}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Herunterladen von {symbol}: {e}")
+        return False
 
 def update_csv_with_real_data(coingecko_data):
     """
@@ -100,8 +181,10 @@ def update_csv_with_real_data(coingecko_data):
         csv_file = f"{symbol}_daily.csv"
         
         if not os.path.exists(csv_file):
-            print(f"❌ {csv_file} nicht gefunden")
-            continue
+            print(f"❌ {csv_file} nicht gefunden - wird heruntergeladen...")
+            if not download_missing_csv(symbol):
+                print(f"❌ Konnte {csv_file} nicht herunterladen - überspringe")
+                continue
             
         print(f"\n🔄 Updating {symbol}...")
         
@@ -176,6 +259,25 @@ def show_august_overview():
                     print(f"   {date_str}: €{row['Close']:>10.2f}{source}")
                 else:
                     print(f"   {date_str}: ❌ FEHLT")
+
+def update_csv_files_with_realtime_data():
+    """
+    Wrapper function für Live Backtest - updated CSVs mit Echtzeitdaten
+    """
+    print("🚀 CSV UPDATE MIT ECHTZEITDATEN")
+    print("="*50)
+    
+    # 1. Hole echte Daten von CoinGecko
+    coingecko_data = get_real_crypto_data_coingecko()
+    
+    if coingecko_data:
+        # 2. Update CSV Dateien (inkl. Download fehlender Dateien)
+        update_csv_with_real_data(coingecko_data)
+        print("✅ CSV Update abgeschlossen")
+        return True
+    else:
+        print("❌ Keine Daten von CoinGecko erhalten")
+        return False
 
 def main():
     """Hauptfunktion"""

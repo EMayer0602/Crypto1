@@ -786,24 +786,33 @@ def open_all_charts_in_sequence():
     
     print(f"🎯 All {len(chart_files)} charts opened!")
 
-def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_bt):
+def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_bt, trade_on="Close"):
     """
-    KORREKTE TÄGLICHE Equity über ganz df:
-    - Am BUY-Tag: Capital = Capital - Fees
-    - Während Long: Capital = Capital + Shares * (Close - Open) 
-    - Am SELL-Tag: Capital = Capital - Fees
-    - Danach konstant bis nächster BUY
+    KORREKTE TÄGLICHE Equity Formeln:
+    
+    Trade on Close:
+    - Buy date: capital = capital - fee
+    - All long days except sell: capital = capital + (close - previous_close) * shares
+    - Sell day: capital = capital + (close - previous_close) * shares - fee
+    - All non-invested days: capital = capital
+    
+    Trade on Open:
+    - Buy date: capital = capital + (close - open) * shares - fee
+    - All long days except sell: capital = capital + (close - previous_close) * shares
+    - Sell day: capital = capital + (open - previous_close) * shares - fee
+    - All non-invested days: capital = capital
     """
     print(f"🔍 DEBUG: TÄGLICHE Equity über {len(df_bt)} Tage")
     print(f"🔍 DEBUG: Initial Capital = €{initial_capital} (from parameter)")
     print(f"🔍 DEBUG: Number of trades = {len(matched_trades)}")
+    print(f"🔍 DEBUG: Trade Mode = {trade_on}")
     
-    # ✅ FORCE CORRECT INITIAL CAPITAL - NO MORE 10000!
+    # ✅ FORCE CORRECT INITIAL CAPITAL
     if initial_capital is None or initial_capital <= 0:
         print(f"❌ ERROR: Invalid initial_capital={initial_capital}, using 1000 fallback")
-        current_capital = 1000.0  # XRP-EUR fallback
+        current_capital = 1000.0
     else:
-        current_capital = float(initial_capital)  # ✅ USE EXACT VALUE FROM PARAMETER
+        current_capital = float(initial_capital)
     
     print(f"🔍 DEBUG: Starting with current_capital = €{current_capital}")
     
@@ -811,6 +820,7 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
     position_shares = 0
     is_long = False
     trade_index = 0
+    previous_close = None
     
     # Separiere komplette und offene Trades
     completed_trades = [t for t in matched_trades if not t.get('is_open', False)]
@@ -822,59 +832,84 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
         today_open = df_bt.loc[date, 'Open']
         today_close = df_bt.loc[date, 'Close']
         
+        # Setze previous_close für den ersten Tag
+        if previous_close is None:
+            previous_close = today_open  # Fallback für ersten Tag
+        
         # ✅ 1. PRÜFE BUY-SIGNAL (komplette Trades)
+        is_buy_day = False
         if trade_index < len(completed_trades) and not is_long:
             trade = completed_trades[trade_index]
             buy_date = pd.to_datetime(trade.get('buy_date', '')).date()
             
             if date.date() == buy_date:
-                # BUY: Schätze Fees basierend auf Trade-Daten
+                is_buy_day = True
                 position_shares = trade.get('shares', 0)
+                
+                # Schätze Fees basierend auf Trade-Daten
                 buy_price = trade.get('buy_price', 0)
                 total_pnl = trade.get('pnl', 0)
                 sell_price = trade.get('sell_price', 0)
-                
-                # Schätze Fees: Total PnL = Shares * (Sell - Buy) - Fees
                 theoretical_pnl = position_shares * (sell_price - buy_price)
-                estimated_fees = theoretical_pnl - total_pnl if theoretical_pnl > total_pnl else 0
-                buy_fees = estimated_fees / 2  # Verteile auf Buy und Sell
+                estimated_total_fees = theoretical_pnl - total_pnl if theoretical_pnl > total_pnl else 0
+                buy_fees = estimated_total_fees / 2  # Verteile auf Buy und Sell
                 
-                current_capital -= buy_fees  # Fees abziehen
+                if trade_on.upper() == "OPEN":
+                    # Trade on Open: capital = capital + (close - open) * shares - fee
+                    daily_pnl = position_shares * (today_close - today_open)
+                    current_capital = current_capital + daily_pnl - buy_fees
+                    if i < 5 or i > len(df_bt) - 5:
+                        print(f"   📈 BUY OPEN {date.date()}: {position_shares:.4f} * (€{today_close:.2f} - €{today_open:.2f}) - €{buy_fees:.2f} = €{daily_pnl - buy_fees:.2f}, Capital: €{current_capital:.0f}")
+                else:
+                    # Trade on Close: capital = capital - fee
+                    current_capital = current_capital - buy_fees
+                    if i < 5 or i > len(df_bt) - 5:
+                        print(f"   📈 BUY CLOSE {date.date()}: Fees: €{buy_fees:.2f}, Capital: €{current_capital:.0f}")
+                
                 is_long = True
-                
-                if i < 5 or i > len(df_bt) - 5:
-                    print(f"   📈 BUY {date.date()}: {position_shares:.4f} shares, Fees: €{buy_fees:.2f}, Capital: €{current_capital:.0f}")
         
-        # ✅ 2. WÄHREND LONG-POSITION: Tägliche P&L
-        if is_long and position_shares > 0:
-            # Capital = Capital + Shares * (Close - Open)
-            daily_pnl = position_shares * (today_close - today_open)
-            current_capital += daily_pnl
-            
-            if i < 3 or i > len(df_bt) - 3 or (i % 100 == 0):
-                print(f"   📊 LONG {date.date()}: {position_shares:.4f} * (€{today_close:.2f} - €{today_open:.2f}) = €{daily_pnl:.2f}, Capital: €{current_capital:.0f}")
-        
-        # ✅ 3. PRÜFE SELL-SIGNAL (komplette Trades)
+        # ✅ 2. PRÜFE SELL-SIGNAL (komplette Trades)
+        is_sell_day = False
         if trade_index < len(completed_trades) and is_long:
             trade = completed_trades[trade_index]
             sell_date = pd.to_datetime(trade.get('sell_date', '')).date()
             
             if date.date() == sell_date:
-                # SELL: Verwende geschätzte Fees
-                total_pnl = trade.get('pnl', 0)
+                is_sell_day = True
+                
+                # Schätze Sell-Fees
                 buy_price = trade.get('buy_price', 0)
+                total_pnl = trade.get('pnl', 0)
                 sell_price = trade.get('sell_price', 0)
                 theoretical_pnl = position_shares * (sell_price - buy_price)
-                estimated_fees = theoretical_pnl - total_pnl if theoretical_pnl > total_pnl else 0
-                sell_fees = estimated_fees / 2
+                estimated_total_fees = theoretical_pnl - total_pnl if theoretical_pnl > total_pnl else 0
+                sell_fees = estimated_total_fees / 2
                 
-                current_capital -= sell_fees  # Fees abziehen
+                if trade_on.upper() == "OPEN":
+                    # Trade on Open: capital = capital + (open - previous_close) * shares - fee
+                    daily_pnl = position_shares * (today_open - previous_close)
+                    current_capital = current_capital + daily_pnl - sell_fees
+                    if i < 5 or i > len(df_bt) - 5:
+                        print(f"   � SELL OPEN {date.date()}: {position_shares:.4f} * (€{today_open:.2f} - €{previous_close:.2f}) - €{sell_fees:.2f} = €{daily_pnl - sell_fees:.2f}, Capital: €{current_capital:.0f}")
+                else:
+                    # Trade on Close: capital = capital + (close - previous_close) * shares - fee
+                    daily_pnl = position_shares * (today_close - previous_close)
+                    current_capital = current_capital + daily_pnl - sell_fees
+                    if i < 5 or i > len(df_bt) - 5:
+                        print(f"   � SELL CLOSE {date.date()}: {position_shares:.4f} * (€{today_close:.2f} - €{previous_close:.2f}) - €{sell_fees:.2f} = €{daily_pnl - sell_fees:.2f}, Capital: €{current_capital:.0f}")
+                
                 position_shares = 0
                 is_long = False
                 trade_index += 1
-                
-                if i < 5 or i > len(df_bt) - 5:
-                    print(f"   💰 SELL {date.date()}: Fees: €{sell_fees:.2f}, Capital: €{current_capital:.0f}")
+        
+        # ✅ 3. WÄHREND LONG-POSITION (außer Buy/Sell-Tagen)
+        if is_long and position_shares > 0 and not is_buy_day and not is_sell_day:
+            # Beide Modi: capital = capital + (close - previous_close) * shares
+            daily_pnl = position_shares * (today_close - previous_close)
+            current_capital = current_capital + daily_pnl
+            
+            if i < 3 or i > len(df_bt) - 3 or (i % 50 == 0):
+                print(f"   📊 LONG {date.date()}: {position_shares:.4f} * (€{today_close:.2f} - €{previous_close:.2f}) = €{daily_pnl:.2f}, Capital: €{current_capital:.0f}")
         
         # ✅ 4. HANDLE OFFENE TRADES (nach allen kompletten Trades)
         if trade_index >= len(completed_trades) and not is_long:
@@ -882,20 +917,29 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
                 open_buy_date = pd.to_datetime(open_trade.get('buy_date', '')).date()
                 
                 if date.date() == open_buy_date:
-                    # OPEN BUY: Schätze Buy-Fees
                     position_shares = open_trade.get('shares', 0)
-                    buy_price = open_trade.get('buy_price', 0)
-                    estimated_buy_fees = position_shares * buy_price * 0.001  # 0.1% geschätzt
+                    estimated_buy_fees = position_shares * open_trade.get('buy_price', 0) * 0.001  # 0.1% geschätzt
                     
-                    current_capital -= estimated_buy_fees
+                    if trade_on.upper() == "OPEN":
+                        # Trade on Open: capital = capital + (close - open) * shares - fee
+                        daily_pnl = position_shares * (today_close - today_open)
+                        current_capital = current_capital + daily_pnl - estimated_buy_fees
+                        if i < 5 or i > len(df_bt) - 5:
+                            print(f"   🔓 OPEN BUY OPEN {date.date()}: {position_shares:.4f} * (€{today_close:.2f} - €{today_open:.2f}) - €{estimated_buy_fees:.2f}")
+                    else:
+                        # Trade on Close: capital = capital - fee
+                        current_capital = current_capital - estimated_buy_fees
+                        if i < 5 or i > len(df_bt) - 5:
+                            print(f"   🔓 OPEN BUY CLOSE {date.date()}: Fees: €{estimated_buy_fees:.2f}")
+                    
                     is_long = True
-                    
-                    if i < 5 or i > len(df_bt) - 5:
-                        print(f"   🔓 OPEN BUY {date.date()}: {position_shares:.4f} shares, Fees: €{estimated_buy_fees:.2f}")
                     break
         
         # Equity-Wert für heute hinzufügen
         equity_curve.append(current_capital)
+        
+        # Update previous_close für nächsten Tag
+        previous_close = today_close
     
     # Statistiken
     unique_vals = len(set([int(v/50)*50 for v in equity_curve]))
@@ -903,6 +947,7 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
     
     print(f"✅ TÄGLICHE Equity: Start €{equity_curve[0]:.0f} → Ende €{equity_curve[-1]:.0f}")
     print(f"📊 Variation: {variation:.1f}%, Unique Werte: {unique_vals}")
+    print(f"📊 Trade Mode: {trade_on}")
     
     if unique_vals > 50:
         print("   ✅ Equity variiert TÄGLICH korrekt!")
