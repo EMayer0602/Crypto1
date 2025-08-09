@@ -12,8 +12,24 @@ def remove_all_headers_and_set_columns(df, new_columns=None):
     """
     Entfernt alle Header und setzt neue Spalten
     """
-    try:
-        # Prüfe aktuelle Spaltenanzahl
+    t        # DataFrame erstellen
+        ext_df = pd.DataFrame(signals)
+        
+        if not ext_df.empty:
+            ext_df = ext_df.sort_values('Long Trade Day').reset_index(drop=True)
+            
+            # Statistiken für Debug (nur wenn DataFrame nicht leer)
+            buy_count = len(ext_df[ext_df['Action'] == 'buy'])
+            sell_count = len(ext_df[ext_df['Action'] == 'sell'])
+            none_count = len(ext_df[ext_df['Action'] == 'None'])
+            
+            print(f"✅ CONSECUTIVE LOGIC Applied:")
+            print(f"   📊 Total Signals: {len(ext_df)}")
+            print(f"   📈 Buy Actions: {buy_count}")
+            print(f"   📉 Sell Actions: {sell_count}")
+            print(f"   ⏸️  None Actions: {none_count}")
+        else:
+            print(f"⚠️  No signals generated")rüfe aktuelle Spaltenanzahl
         current_cols = len(df.columns)
         
         if new_columns is None:
@@ -409,7 +425,7 @@ def get_trade_day_offset(date_hl, tw, data):
         return pd.NaT
     return future_dates[tw - 1]
 
-def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe):
+def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe, trade_on="Close"):
     """
     CONSECUTIVE LOGIC: Nur erste Support/Resistance in Serie = Action
     """
@@ -462,11 +478,12 @@ def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe):
             # ✅ HANDELSDATUM MIT TW BERECHNEN
             trade_day = get_trade_day_offset(level_info['date'], tw, df)
             
-            # Close Preis finden
+            # Price based on trade_on setting
+            price_column = "Open" if trade_on.upper() == "OPEN" else "Close"
             if trade_day in df.index:
-                close_price = df.loc[trade_day, 'Close']
+                close_price = df.loc[trade_day, price_column]
             elif level_info['date'] in df.index:
-                close_price = df.loc[level_info['date'], 'Close']
+                close_price = df.loc[level_info['date'], price_column]
             else:
                 continue
             
@@ -578,8 +595,14 @@ def calculate_shares(capital, price, round_factor=1):
     raw = capital / price
     return round(raw / round_factor) * round_factor
 
-def update_level_close_long(ext, df):
+def update_level_close_long(ext, df, trade_on="Close"):
+    """
+    Update Level Close column based on trade_on parameter.
+    trade_on: "Open" or "Close"
+    """
     closes = []
+    price_column = "Open" if trade_on.upper() == "OPEN" else "Close"
+    
     for _, row in ext.iterrows():
         dt = row.get("Long Date detected")  # Changed from "Detect Date" to "Long Date detected"
         if pd.isna(dt):
@@ -591,7 +614,7 @@ def update_level_close_long(ext, df):
                     dt0 = pd.to_datetime(dt).normalize()
                 else:
                     dt0 = dt.normalize()
-                val = df.at[dt0, "Close"]
+                val = df.at[dt0, price_column]  # Use Open or Close based on trade_on
                 closes.append(float(val))
             except:
                 closes.append(np.nan)

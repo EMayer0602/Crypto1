@@ -1332,6 +1332,11 @@ def calculate_trade_statistics(matched_trades, equity_curve, initial_capital, co
 def backtest_single_ticker(cfg, symbol):
     import pandas as pd
 
+    # Get ticker config for trade_on setting
+    from crypto_tickers import crypto_tickers
+    ticker_config = crypto_tickers.get(symbol, {})
+    trade_on = ticker_config.get('trade_on', 'Close')
+
     # Daten laden
     df = load_crypto_data_yf(symbol)
     if df is None or df.empty:
@@ -1374,8 +1379,8 @@ def backtest_single_ticker(cfg, symbol):
 
     # Signale
     std_bt = assign_long_signals(supp_bt, res_bt, df_bt, tw, "1d")
-    ext_bt = assign_long_signals_extended(supp_bt, res_bt, df_bt, tw, "1d")
-    ext_bt = update_level_close_long(ext_bt, df_bt)
+    ext_bt = assign_long_signals_extended(supp_bt, res_bt, df_bt, tw, "1d", trade_on)
+    ext_bt = update_level_close_long(ext_bt, df_bt, trade_on)
 
     # Trades simulieren
     cap_bt, trades_bt = simulate_trades_compound_extended(
@@ -1911,7 +1916,7 @@ def run_backtest(symbol, config):
         
         # Extended Signals generieren mit kompletten df
         print(f"\n📊 Generiere Extended Signals für {symbol}...")
-        ext_full = assign_long_signals_extended(supp_full, res_full, df, optimal_trade_window, "1d")
+        ext_full = assign_long_signals_extended(supp_full, res_full, df, optimal_trade_window, "1d", trade_on.title())
         
         if ext_full is None or ext_full.empty:
             print(f"❌ Keine Extended Signals für {symbol}")
