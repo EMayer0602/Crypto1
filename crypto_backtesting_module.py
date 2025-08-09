@@ -648,14 +648,22 @@ def run_live_backtest_analysis():
         print("🚀 UNIFIED LIVE CRYPTO BACKTEST STARTING...")
         print(f"⏰ Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
-        # Update CSV files with real-time data
+        # Update CSV files with intelligent update logic
         try:
-            from get_real_crypto_data import update_csv_files_with_realtime_data
-            print("\n🔄 Updating CSV files with real-time data...")
-            update_csv_files_with_realtime_data()
-            print("✅ CSV files updated!")
+            from smart_csv_update import smart_update_csv_files
+            print("\n🧠 Intelligent CSV update (only necessary data)...")
+            smart_update_csv_files()
+            print("✅ Smart CSV update completed!")
         except Exception as e:
-            print(f"❌ Failed to update CSV files: {e}")
+            print(f"❌ Smart CSV update failed, falling back to full update: {e}")
+            # Fallback to old method
+            try:
+                from get_real_crypto_data import update_csv_files_with_realtime_data
+                print("\n🔄 Fallback: Full CSV update...")
+                update_csv_files_with_realtime_data()
+                print("✅ Fallback CSV update completed!")
+            except Exception as e2:
+                print(f"❌ Both update methods failed: {e2}")
         
         # Run backtests for all tickers
         all_results = {}
@@ -1895,11 +1903,13 @@ def run_backtest(symbol, config):
         print(df.tail().to_string())
         
         # Support/Resistance berechnen mit df_bt für Optimierung
-        print(f"\n📊 Optimiere Parameter für {symbol}...")
-        optimal_results = optimize_parameters(df_bt, symbol)  # ✅ df_bt für Parameter-Optimierung
+        # print(f"\n📊 Optimiere Parameter für {symbol}...")  # ✅ Print auskommentiert
+        optimal_results = optimize_parameters(df_bt, symbol)  # ✅ Optimierung läuft weiter
         
-        optimal_past_window = optimal_results.get('optimal_past_window', 0)
-        optimal_trade_window = optimal_results.get('optimal_trade_window', 2)
+        optimal_past_window = optimal_results.get('optimal_past_window', 10)
+        optimal_trade_window = optimal_results.get('optimal_trade_window', 1)
+        
+        # print(f"\n📊 Verwende OPTIMALE Parameter für {symbol}: past_window={optimal_past_window}, trade_window={optimal_trade_window}")  # ✅ Print auskommentiert
         
         # Support/Resistance mit optimalen Parametern auf kompletten df berechnen
         supp_full, res_full = calculate_support_resistance(df, optimal_past_window, optimal_trade_window, verbose=False, ticker=symbol)
@@ -1938,7 +1948,7 @@ def run_backtest(symbol, config):
         # 4. MATCHED TRADES - SIMULATION (mit kompletten df)
         print(f"\n📊 4. MATCHED TRADES - SIMULATION - {symbol}")
         print("="*120)
-        matched_trades = simulate_matched_trades(ext_full, initial_capital, commission_rate, df, order_round_factor)
+        matched_trades = simulate_matched_trades(ext_full, initial_capital, commission_rate, df, order_round_factor, trade_on.title())
         if not matched_trades.empty:
             print(matched_trades.to_string(index=True, max_rows=None))
         else:
@@ -2191,7 +2201,7 @@ def optimize_parameters(df, symbol):
     mit ticker-spezifischen Parametern aus crypto_tickers.py und config.py
     """
     try:
-        print(f"🔍 Optimiere Parameter für {symbol}...")
+        # print(f"🔍 Optimiere Parameter für {symbol}...")
         
         # Lade ticker-spezifische Konfiguration
         from crypto_tickers import crypto_tickers
@@ -2233,7 +2243,7 @@ def optimize_parameters(df, symbol):
             df, cfg, start_idx, end_idx, verbose=True, ticker=symbol
         )
         
-        print(f"✅ Optimal: Past={p}, Trade={tw}")
+        # print(f"✅ Optimal: Past={p}, Trade={tw}")  # ✅ Print auskommentiert
         
         return {
             'optimal_past_window': p,      # ✅ p -> optimal_past_window
@@ -2250,7 +2260,7 @@ def optimize_parameters(df, symbol):
             'method': 'fallback'
         }
 
-def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=None, order_round_factor=1.0):
+def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=None, order_round_factor=1.0, trade_on='Close'):
     """
     Simuliert Matched Trades basierend auf Extended Signals
     Inkludiert offene Trades mit heutigem artificial price
@@ -2264,18 +2274,22 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=
         capital = initial_capital
         today = pd.Timestamp.now().date()
         
+        # The 'Level Close' column contains the actual trading price (Open or Close) based on trade_on
+        # This is set by update_level_close_long function
+        price_column = 'Level Close'
+        
         for idx, row in ext_full.iterrows():
             if row['Action'] == 'buy' and position is None:
                 # Öffne Long Position
                 position = {
                     'entry_date': row['Long Date detected'],
-                    'entry_price': row['Level Close'],
+                    'entry_price': row[price_column],
                     'entry_idx': idx
                 }
             elif row['Action'] == 'sell' and position is not None:
                 # Schließe Position
                 entry_price = position['entry_price']
-                exit_price = row['Level Close']
+                exit_price = row[price_column]
                 
                 # Calculate quantity using order_round_factor
                 raw_quantity = capital / entry_price
@@ -2322,6 +2336,8 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=
             
             # Unrealized PnL berechnen
             unrealized_pnl = (artificial_price - entry_price) * quantity
+            entry_commission = entry_price * quantity * commission_rate
+            net_unrealized_pnl = unrealized_pnl - entry_commission
             
             matched.append({
                 'Entry Date': position['entry_date'],
@@ -2330,13 +2346,13 @@ def simulate_matched_trades(ext_full, initial_capital, commission_rate, data_df=
                 'Exit Price': round(artificial_price, 2),
                 'Quantity': round(quantity, 4),
                 'PnL': round(unrealized_pnl, 2),
-                'Commission': round(entry_price * quantity * commission_rate, 2),
-                'Net PnL': round(unrealized_pnl - (entry_price * quantity * commission_rate), 2),
-                'Capital': round(capital + unrealized_pnl, 2),
+                'Commission': round(entry_commission, 2),
+                'Net PnL': round(net_unrealized_pnl, 2),
+                'Capital': round(capital + net_unrealized_pnl, 2),  # ✅ FIXED: Use Net PnL instead of raw PnL
                 'Status': 'OPEN',
                 'Type': 'Artificial'
             })
-            print(f"🔓 Offener Trade hinzugefügt: Entry={entry_price:.2f}, Current={artificial_price:.2f}, PnL={unrealized_pnl:.2f}")
+            print(f"🔓 Offener Trade hinzugefügt: Entry={entry_price:.2f}, Current={artificial_price:.2f}, PnL={unrealized_pnl:.2f}, Net PnL={net_unrealized_pnl:.2f}")
         
         return pd.DataFrame(matched)
         

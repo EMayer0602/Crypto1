@@ -494,11 +494,11 @@ def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe, trade_o
             sell_count = len(ext_df[ext_df['Action'] == 'sell'])
             none_count = len(ext_df[ext_df['Action'] == 'None'])
             
-            print(f"✅ CONSECUTIVE LOGIC Applied:")
-            print(f"   📊 Total Signals: {len(ext_df)}")
-            print(f"   📈 Buy Actions: {buy_count}")
-            print(f"   📉 Sell Actions: {sell_count}")
-            print(f"   ⏸️  None Actions: {none_count}")
+            # print(f"✅ CONSECUTIVE LOGIC Applied:")
+            # print(f"   📊 Total Signals: {len(ext_df)}")
+            # print(f"   📈 Buy Actions: {buy_count}")
+            # print(f"   📉 Sell Actions: {sell_count}")
+            # print(f"   ⏸️  None Actions: {none_count}")
         else:
             print(f"⚠️  No signals generated")
         
@@ -554,7 +554,7 @@ def simulate_trades_compound_extended(signals_df, initial_capital, commission_ra
             print("❌ Keine Signale für Trade Simulation!")
             return None
             
-        print(f"📊 Simuliere Trades mit {len(signals_df)} Signalen...")
+        # print(f"📊 Simuliere Trades mit {len(signals_df)} Signalen...")
         
         # Basis Trade-Simulation hier implementieren
         # (Komplex - würde separaten Code benötigen)
@@ -740,7 +740,7 @@ def simulate_trades_compound_extended(signals_df, initial_capital, commission_ra
             print("❌ Keine Signale für Trade Simulation!")
             return initial_capital, pd.DataFrame()
             
-        print(f"📊 Simuliere Trades mit {len(signals_df)} Signalen...")
+        # print(f"📊 Simuliere Trades mit {len(signals_df)} Signalen...")
         
         # Grundlegende Trade-Simulation
         trades = []

@@ -788,24 +788,28 @@ def open_all_charts_in_sequence():
 
 def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_bt, trade_on="Close"):
     """
-    KORREKTE TÄGLICHE Equity Formeln:
+    EXCEL-VALIDATED DAILY EQUITY CURVE - DYNAMIC FEE CALCULATION:
     
     Trade on Close:
-    - Buy date: capital = capital - fee
-    - All long days except sell: capital = capital + (close - previous_close) * shares
-    - Sell day: capital = capital + (close - previous_close) * shares - fee
-    - All non-invested days: capital = capital
+    - BUY day: capital = capital - fees (fees = Close*shares*0.0018)
+    - During LONG positions: capital = capital + shares * (Close - previous_Close) DAILY
+    - SELL day: capital = capital + shares * (Close - previous_Close) - fees (fees = Close*shares*0.0018)
+    - After SELL: capital bleibt CONSTANT bis zum nächsten BUY
     
     Trade on Open:
-    - Buy date: capital = capital + (close - open) * shares - fee
-    - All long days except sell: capital = capital + (close - previous_close) * shares
-    - Sell day: capital = capital + (open - previous_close) * shares - fee
-    - All non-invested days: capital = capital
+    - BUY day: capital = capital + shares * (Close - Open) - fees (fees = Open*shares*0.0018)
+    - During LONG positions: capital = capital + shares * (Close - previous_Close) DAILY
+    - SELL day: capital = capital + shares * (Open - previous_Close) - fees (fees = Open*shares*0.0018)
+    - After SELL: capital bleibt CONSTANT bis zum nächsten BUY
+    
+    IMPORTANT: Fees are calculated dynamically per trade day using actual Open/Close price and shares,
+    NOT taken from matched trades data. This matches your Excel-validated specification.
     """
-    print(f"🔍 DEBUG: TÄGLICHE Equity über {len(df_bt)} Tage")
+    print(f"🔍 DEBUG: DYNAMIC FEE Equity über {len(df_bt)} Tage")
     print(f"🔍 DEBUG: Initial Capital = €{initial_capital} (from parameter)")
     print(f"🔍 DEBUG: Number of trades = {len(matched_trades)}")
     print(f"🔍 DEBUG: Trade Mode = {trade_on}")
+    print(f"🔍 DEBUG: Commission Rate = 0.18% (dynamic calculation)")
     
     # ✅ FORCE CORRECT INITIAL CAPITAL
     if initial_capital is None or initial_capital <= 0:
@@ -852,22 +856,19 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
                 is_buy_day = True
                 position_shares = trade.get('shares', 0)
                 
-                # Schätze Fees basierend auf Trade-Daten
-                buy_price = trade.get('buy_price', 0)
-                total_pnl = trade.get('pnl', 0)
-                sell_price = trade.get('sell_price', 0)
-                theoretical_pnl = position_shares * (sell_price - buy_price)
-                estimated_total_fees = theoretical_pnl - total_pnl if theoretical_pnl > total_pnl else 0
-                buy_fees = estimated_total_fees / 2  # Verteile auf Buy und Sell
-                
+                # ✅ DYNAMIC FEE CALCULATION - BUY DAY
                 if trade_on.upper() == "OPEN":
-                    # Trade on Open: capital = capital + (close - open) * shares - fee
+                    # Trade on Open: fees = Open * shares * commission_rate
+                    buy_fees = today_open * position_shares * 0.0018  # Default commission rate
+                    # capital = capital + (close - open) * shares - fees
                     daily_pnl = position_shares * (today_close - today_open)
                     current_capital = current_capital + daily_pnl - buy_fees
                     if i < 5 or i > len(df_bt) - 5:
                         print(f"   📈 BUY OPEN {date.date()}: {position_shares:.4f} * (€{today_close:.2f} - €{today_open:.2f}) - €{buy_fees:.2f} = €{daily_pnl - buy_fees:.2f}, Capital: €{current_capital:.0f}")
                 else:
-                    # Trade on Close: capital = capital - fee
+                    # Trade on Close: fees = Close * shares * commission_rate
+                    buy_fees = today_close * position_shares * 0.0018  # Default commission rate
+                    # capital = capital - fees
                     current_capital = current_capital - buy_fees
                     if i < 5 or i > len(df_bt) - 5:
                         print(f"   📈 BUY CLOSE {date.date()}: Fees: €{buy_fees:.2f}, Capital: €{current_capital:.0f}")
@@ -883,15 +884,9 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
             if date.date() == sell_date:
                 is_sell_day = True
                 
-                # Schätze Sell-Fees
-                buy_price = trade.get('buy_price', 0)
-                total_pnl = trade.get('pnl', 0)
-                sell_price = trade.get('sell_price', 0)
-                theoretical_pnl = position_shares * (sell_price - buy_price)
-                estimated_total_fees = theoretical_pnl - total_pnl if theoretical_pnl > total_pnl else 0
-                sell_fees = estimated_total_fees / 2
-                
+                # ✅ DYNAMIC FEE CALCULATION - SELL DAY
                 if trade_on.upper() == "OPEN":
+                    sell_fees = today_open * position_shares * 0.0018
                     # Trade on Open: capital = capital + (open - previous_close) * shares - fee
                     daily_pnl = position_shares * (today_open - previous_close)
                     current_capital = current_capital + daily_pnl - sell_fees
@@ -899,7 +894,8 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
                         print(f"   💰 SELL OPEN {date.date()}: Verkauf zum Open €{today_open:.2f}, Fees: €{sell_fees:.2f}, Capital: €{current_capital:.0f}")
                         print(f"   � SELL OPEN {date.date()}: {position_shares:.4f} * (€{today_open:.2f} - €{previous_close:.2f}) - €{sell_fees:.2f} = €{daily_pnl - sell_fees:.2f}, Capital: €{current_capital:.0f}")
                 else:
-                    # Trade on Close: capital = capital + (close - previous_close) * shares - fee
+                    sell_fees = today_close * position_shares * 0.0018  # Default commission rate
+                    # Trade on Close: capital = capital + (close - previous_close) * shares - fees
                     daily_pnl = position_shares * (today_close - previous_close)
                     current_capital = current_capital + daily_pnl - sell_fees
                     if i < 5 or i > len(df_bt) - 5:
@@ -925,19 +921,22 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
                 
                 if date.date() == open_buy_date:
                     position_shares = open_trade.get('shares', 0)
-                    estimated_buy_fees = position_shares * open_trade.get('buy_price', 0) * 0.001  # 0.1% geschätzt
-                    
+                    # ✅ DYNAMIC FEE CALCULATION - OPEN TRADE
                     if trade_on.upper() == "OPEN":
-                        # Trade on Open: capital = capital + (close - open) * shares - fee
+                        # Trade on Open: fees = Open * shares * commission_rate
+                        open_buy_fees = today_open * position_shares * 0.0018  # Default commission rate
+                        # capital = capital + (close - open) * shares - fees
                         daily_pnl = position_shares * (today_close - today_open)
-                        current_capital = current_capital + daily_pnl - estimated_buy_fees
+                        current_capital = current_capital + daily_pnl - open_buy_fees
                         if i < 5 or i > len(df_bt) - 5:
-                            print(f"   🔓 OPEN BUY OPEN {date.date()}: {position_shares:.4f} * (€{today_close:.2f} - €{today_open:.2f}) - €{estimated_buy_fees:.2f}")
+                            print(f"   🔓 OPEN BUY OPEN {date.date()}: {position_shares:.4f} * (€{today_close:.2f} - €{today_open:.2f}) - €{open_buy_fees:.2f}")
                     else:
-                        # Trade on Close: capital = capital - fee
-                        current_capital = current_capital - estimated_buy_fees
+                        # Trade on Close: fees = Close * shares * commission_rate
+                        open_buy_fees = today_close * position_shares * 0.0018  # Default commission rate
+                        # capital = capital - fees
+                        current_capital = current_capital - open_buy_fees
                         if i < 5 or i > len(df_bt) - 5:
-                            print(f"   🔓 OPEN BUY CLOSE {date.date()}: Fees: €{estimated_buy_fees:.2f}")
+                            print(f"   🔓 OPEN BUY CLOSE {date.date()}: Fees: €{open_buy_fees:.2f}")
                     
                     is_long = True
                     break
@@ -952,9 +951,9 @@ def create_equity_curve_from_matched_trades(matched_trades, initial_capital, df_
     unique_vals = len(set([int(v/50)*50 for v in equity_curve]))
     variation = (max(equity_curve) - min(equity_curve)) / initial_capital * 100
     
-    print(f"✅ TÄGLICHE Equity: Start €{equity_curve[0]:.0f} → Ende €{equity_curve[-1]:.0f}")
+    print(f"✅ DYNAMIC FEE Equity: Start €{equity_curve[0]:.0f} → Ende €{equity_curve[-1]:.0f}")
     print(f"📊 Variation: {variation:.1f}%, Unique Werte: {unique_vals}")
-    print(f"📊 Trade Mode: {trade_on}")
+    print(f"📊 Trade Mode: {trade_on}, Commission: 0.18% (dynamic calculation)")
     
     if unique_vals > 50:
         print("   ✅ Equity variiert TÄGLICH korrekt!")
