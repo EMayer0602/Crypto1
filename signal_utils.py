@@ -12,24 +12,8 @@ def remove_all_headers_and_set_columns(df, new_columns=None):
     """
     Entfernt alle Header und setzt neue Spalten
     """
-    t        # DataFrame erstellen
-        ext_df = pd.DataFrame(signals)
-        
-        if not ext_df.empty:
-            ext_df = ext_df.sort_values('Long Trade Day').reset_index(drop=True)
-            
-            # Statistiken für Debug (nur wenn DataFrame nicht leer)
-            buy_count = len(ext_df[ext_df['Action'] == 'buy'])
-            sell_count = len(ext_df[ext_df['Action'] == 'sell'])
-            none_count = len(ext_df[ext_df['Action'] == 'None'])
-            
-            print(f"✅ CONSECUTIVE LOGIC Applied:")
-            print(f"   📊 Total Signals: {len(ext_df)}")
-            print(f"   📈 Buy Actions: {buy_count}")
-            print(f"   📉 Sell Actions: {sell_count}")
-            print(f"   ⏸️  None Actions: {none_count}")
-        else:
-            print(f"⚠️  No signals generated")rüfe aktuelle Spaltenanzahl
+    try:
+        # Prüfe aktuelle Spaltenanzahl
         current_cols = len(df.columns)
         
         if new_columns is None:
@@ -504,17 +488,19 @@ def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe, trade_o
         
         if not ext_df.empty:
             ext_df = ext_df.sort_values('Long Trade Day').reset_index(drop=True)
-        
-        # Statistiken für Debug
-        buy_count = len(ext_df[ext_df['Action'] == 'buy'])
-        sell_count = len(ext_df[ext_df['Action'] == 'sell'])
-        none_count = len(ext_df[ext_df['Action'] == 'None'])
-        
-        print(f"✅ CONSECUTIVE LOGIC Applied:")
-        print(f"   📊 Total Signals: {len(ext_df)}")
-        print(f"   📈 Buy Actions: {buy_count}")
-        print(f"   📉 Sell Actions: {sell_count}")
-        print(f"   ⏸️ None Actions: {none_count} (consecutive filtered)")
+            
+            # Statistiken für Debug (nur wenn DataFrame nicht leer)
+            buy_count = len(ext_df[ext_df['Action'] == 'buy'])
+            sell_count = len(ext_df[ext_df['Action'] == 'sell'])
+            none_count = len(ext_df[ext_df['Action'] == 'None'])
+            
+            print(f"✅ CONSECUTIVE LOGIC Applied:")
+            print(f"   📊 Total Signals: {len(ext_df)}")
+            print(f"   📈 Buy Actions: {buy_count}")
+            print(f"   📉 Sell Actions: {sell_count}")
+            print(f"   ⏸️  None Actions: {none_count}")
+        else:
+            print(f"⚠️  No signals generated")
         
         return ext_df
         
