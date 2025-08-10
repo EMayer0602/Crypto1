@@ -1,0 +1,19 @@
+CRYPTO TRADING SUMMARY 2024
+============================================================
+Report Generated: 2025-08-10 10:20:19
+Trading Year: 2024
+============================================================
+
+OVERALL TRADING PERFORMANCE
+----------------------------------------
+Total Transactions: 0
+Buy Orders: 0
+Sell Orders: 0
+Total Buy Value: €0.00
+Total Sell Value: €0.00
+Net Profit/Loss: €0.00
+
+
+============================================================
+DETAILED TRANSACTION LOG
+============================================================

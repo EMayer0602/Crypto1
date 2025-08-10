@@ -1,0 +1,551 @@
+ACTUAL CRYPTO TRADING SUMMARY
+============================================================
+Report Generated: 2025-08-10 10:23:46
+Analysis Period: 2024-2025
+============================================================
+
+PAPER TRADING PERFORMANCE (Actual Orders to Bitpanda)
+--------------------------------------------------
+Total Orders Executed: 15
+Buy Orders: 9
+Sell Orders: 6
+Total Buy Value: €8239.99
+Total Sell Value: €6119.99
+Total Fees Paid: €21.54
+Net P&L: €-2141.54
+Trading Period: 2025-08-10 00:00:00 to 2025-08-10 00:00:00
+Cryptocurrencies Traded: BTC-EUR, ETH-EUR, DOGE-EUR, SOL-EUR, LINK-EUR, XRP-EUR
+
+STRATEGY SIGNAL PERFORMANCE (Trading System)
+--------------------------------------------------
+Total Signals Generated: 47
+Open Signals: 22
+Close Signals: 25
+Total Signal Value: €729284.79
+Signal Period: 2025-07-31 00:00:00 to 2025-08-10 00:00:00
+Cryptocurrencies Signaled: BTC-EUR, ETH-EUR, DOGE-EUR, LINK-EUR, XRP-EUR, SOL-EUR
+
+DETAILED TRANSACTION LOG
+============================================================
+
+--- STRATEGY SIGNAL ---
+
+#1. 2025-07-31 | ETH-EUR
+    Action: Close
+    Quantity: 4.300000
+    Price: €3236.56
+    Value: €13917.21
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+#2. 2025-08-03 | BTC-EUR
+    Action: Open
+    Quantity: 0.426000
+    Price: €97070.67
+    Value: €41352.11
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+#3. 2025-08-03 | ETH-EUR
+    Action: Open
+    Quantity: 4.600000
+    Price: €3018.18
+    Value: €13883.63
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+#4. 2025-08-03 | DOGE-EUR
+    Action: Open
+    Quantity: 1019360.000000
+    Price: €0.16
+    Value: €163097.60
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+#5. 2025-08-03 | XRP-EUR
+    Action: Open
+    Quantity: 9420.000000
+    Price: €2.55
+    Value: €24021.00
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+#6. 2025-08-05 | SOL-EUR
+    Action: Close
+    Quantity: 65.800000
+    Price: €141.72
+    Value: €9325.18
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+#7. 2025-08-05 | BTC-EUR
+    Action: Open
+    Quantity: 0.009984
+    Price: €99160.56
+    Value: €990.02
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#8. 2025-08-05 | ETH-EUR
+    Action: Open
+    Quantity: 0.270961
+    Price: €3653.66
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#9. 2025-08-05 | DOGE-EUR
+    Action: Open
+    Quantity: 4795.657923
+    Price: €0.21
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#10. 2025-08-05 | SOL-EUR
+    Action: Open
+    Quantity: 6.401814
+    Price: €154.64
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#11. 2025-08-05 | LINK-EUR
+    Action: Open
+    Quantity: 53.836799
+    Price: €18.39
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#12. 2025-08-05 | XRP-EUR
+    Action: Open
+    Quantity: 358.534928
+    Price: €2.76
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#13. 2025-08-05 | BTC-EUR
+    Action: Open
+    Quantity: 0.009988
+    Price: €99122.81
+    Value: €990.04
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#14. 2025-08-05 | ETH-EUR
+    Action: Open
+    Quantity: 0.272090
+    Price: €3638.50
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#15. 2025-08-05 | DOGE-EUR
+    Action: Open
+    Quantity: 4803.923378
+    Price: €0.21
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#16. 2025-08-05 | SOL-EUR
+    Action: Open
+    Quantity: 6.405329
+    Price: €154.56
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#17. 2025-08-05 | LINK-EUR
+    Action: Open
+    Quantity: 53.823015
+    Price: €18.39
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#18. 2025-08-05 | XRP-EUR
+    Action: Open
+    Quantity: 359.608763
+    Price: €2.75
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#19. 2025-08-05 | BTC-EUR
+    Action: Open
+    Quantity: 0.009866
+    Price: €100343.75
+    Value: €989.99
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#20. 2025-08-05 | ETH-EUR
+    Action: Open
+    Quantity: 0.275720
+    Price: €3590.60
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#21. 2025-08-05 | DOGE-EUR
+    Action: Open
+    Quantity: 4866.114966
+    Price: €0.20
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#22. 2025-08-05 | SOL-EUR
+    Action: Open
+    Quantity: 6.385477
+    Price: €155.04
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#23. 2025-08-05 | LINK-EUR
+    Action: Open
+    Quantity: 53.113567
+    Price: €18.64
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#24. 2025-08-05 | XRP-EUR
+    Action: Open
+    Quantity: 356.953050
+    Price: €2.77
+    Value: €990.00
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#25. 2025-08-08 | BTC-EUR
+    Action: Close
+    Quantity: 0.009984
+    Price: €102165.42
+    Value: €1020.02
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#26. 2025-08-08 | ETH-EUR
+    Action: Close
+    Quantity: 0.270961
+    Price: €3764.37
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#27. 2025-08-08 | DOGE-EUR
+    Action: Close
+    Quantity: 4795.657923
+    Price: €0.21
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#28. 2025-08-08 | SOL-EUR
+    Action: Close
+    Quantity: 6.401814
+    Price: €159.33
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#29. 2025-08-08 | LINK-EUR
+    Action: Close
+    Quantity: 53.836799
+    Price: €18.95
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#30. 2025-08-08 | XRP-EUR
+    Action: Close
+    Quantity: 358.534928
+    Price: €2.84
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_003424.csv
+
+#31. 2025-08-08 | BTC-EUR
+    Action: Close
+    Quantity: 0.009988
+    Price: €102126.53
+    Value: €1020.04
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#32. 2025-08-08 | ETH-EUR
+    Action: Close
+    Quantity: 0.272090
+    Price: €3748.76
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#33. 2025-08-08 | DOGE-EUR
+    Action: Close
+    Quantity: 4803.923378
+    Price: €0.21
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#34. 2025-08-08 | SOL-EUR
+    Action: Close
+    Quantity: 6.405329
+    Price: €159.24
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#35. 2025-08-08 | LINK-EUR
+    Action: Close
+    Quantity: 53.823015
+    Price: €18.95
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#36. 2025-08-08 | XRP-EUR
+    Action: Close
+    Quantity: 359.608763
+    Price: €2.84
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_003802.csv
+
+#37. 2025-08-08 | BTC-EUR
+    Action: Close
+    Quantity: 0.009866
+    Price: €103384.47
+    Value: €1019.99
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#38. 2025-08-08 | ETH-EUR
+    Action: Close
+    Quantity: 0.275720
+    Price: €3699.41
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#39. 2025-08-08 | DOGE-EUR
+    Action: Close
+    Quantity: 4866.114966
+    Price: €0.21
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#40. 2025-08-08 | SOL-EUR
+    Action: Close
+    Quantity: 6.385477
+    Price: €159.74
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#41. 2025-08-08 | LINK-EUR
+    Action: Close
+    Quantity: 53.113567
+    Price: €19.20
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#42. 2025-08-08 | XRP-EUR
+    Action: Close
+    Quantity: 356.953050
+    Price: €2.86
+    Value: €1020.00
+    Source: 14_day_trades_report_20250810_075205.csv
+
+#43. 2025-08-09 | XRP-EUR
+    Action: Close
+    Quantity: 9420.000000
+    Price: €2.82
+    Value: €26564.40
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+--- PAPER TRADING ---
+
+#44. 2025-08-10 | BTC-EUR
+    Action: BUY
+    Quantity: 0.010000
+    Price: €99981.45
+    Value: €1000.00
+    Fees: €1.50
+    Time: 00:55:34
+    Source: bitpanda_paper_trading_20250810_005547.csv
+
+#45. 2025-08-10 | ETH-EUR
+    Action: BUY
+    Quantity: 0.220000
+    Price: €3658.38
+    Value: €800.00
+    Fees: €1.20
+    Time: 00:55:34
+    Source: bitpanda_paper_trading_20250810_005547.csv
+
+#46. 2025-08-10 | DOGE-EUR
+    Action: BUY
+    Quantity: 2420.000000
+    Price: €0.21
+    Value: €500.00
+    Fees: €0.75
+    Time: 00:55:35
+    Source: bitpanda_paper_trading_20250810_005547.csv
+
+#47. 2025-08-10 | BTC-EUR
+    Action: BUY
+    Quantity: 0.010000
+    Price: €100343.75
+    Value: €989.99
+    Fees: €1.48
+    Time: 08:11:02
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#48. 2025-08-10 | ETH-EUR
+    Action: BUY
+    Quantity: 0.280000
+    Price: €3590.60
+    Value: €990.00
+    Fees: €1.49
+    Time: 08:11:02
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#49. 2025-08-10 | DOGE-EUR
+    Action: BUY
+    Quantity: 4870.000000
+    Price: €0.20
+    Value: €990.00
+    Fees: €1.48
+    Time: 08:11:02
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#50. 2025-08-10 | SOL-EUR
+    Action: BUY
+    Quantity: 6.400000
+    Price: €155.04
+    Value: €990.00
+    Fees: €1.48
+    Time: 08:11:02
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#51. 2025-08-10 | LINK-EUR
+    Action: BUY
+    Quantity: 53.000000
+    Price: €18.64
+    Value: €990.00
+    Fees: €1.49
+    Time: 08:11:02
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#52. 2025-08-10 | XRP-EUR
+    Action: BUY
+    Quantity: 360.000000
+    Price: €2.77
+    Value: €990.00
+    Fees: €1.48
+    Time: 08:11:03
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#53. 2025-08-10 | BTC-EUR
+    Action: SELL
+    Quantity: 0.010000
+    Price: €103384.47
+    Value: €1019.99
+    Fees: €1.53
+    Time: 08:11:03
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#54. 2025-08-10 | ETH-EUR
+    Action: SELL
+    Quantity: 0.280000
+    Price: €3699.41
+    Value: €1020.00
+    Fees: €1.53
+    Time: 08:11:03
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#55. 2025-08-10 | DOGE-EUR
+    Action: SELL
+    Quantity: 4870.000000
+    Price: €0.21
+    Value: €1020.00
+    Fees: €1.53
+    Time: 08:11:03
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#56. 2025-08-10 | SOL-EUR
+    Action: SELL
+    Quantity: 6.400000
+    Price: €159.74
+    Value: €1020.00
+    Fees: €1.53
+    Time: 08:11:03
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#57. 2025-08-10 | LINK-EUR
+    Action: SELL
+    Quantity: 53.000000
+    Price: €19.20
+    Value: €1020.00
+    Fees: €1.53
+    Time: 08:11:03
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+#58. 2025-08-10 | XRP-EUR
+    Action: SELL
+    Quantity: 360.000000
+    Price: €2.86
+    Value: €1020.00
+    Fees: €1.53
+    Time: 08:11:03
+    Source: bitpanda_paper_trading_20250810_081105.csv
+
+--- STRATEGY SIGNAL ---
+
+#59. 2025-08-10 | BTC-EUR
+    Action: Close
+    Quantity: 0.426000
+    Price: €100019.27
+    Value: €42608.21
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+#60. 2025-08-10 | ETH-EUR
+    Action: Close
+    Quantity: 4.600000
+    Price: €3686.10
+    Value: €16956.06
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+#61. 2025-08-10 | DOGE-EUR
+    Action: Close
+    Quantity: 1019360.000000
+    Price: €0.21
+    Value: €214065.60
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+#62. 2025-08-10 | LINK-EUR
+    Action: Close
+    Quantity: 6893.000000
+    Price: €18.47
+    Value: €127313.71
+    Source: 14_day_trades_REAL_20250810_003053.csv
+
+============================================================
+SUMMARY BY CRYPTOCURRENCY
+============================================================
+
+BTC-EUR:
+  Total Trades: 11
+  Total Value: €93000.40
+  Buy Value: €1989.99
+  Sell Value: €1019.99
+  Fees: €4.51
+  Net P&L: €-974.52
+
+ETH-EUR:
+  Total Trades: 12
+  Total Value: €53596.90
+  Buy Value: €1790.00
+  Sell Value: €1020.00
+  Fees: €4.22
+  Net P&L: €-774.21
+
+DOGE-EUR:
+  Total Trades: 11
+  Total Value: €385703.20
+  Buy Value: €1490.00
+  Sell Value: €1020.00
+  Fees: €3.76
+  Net P&L: €-473.77
+
+SOL-EUR:
+  Total Trades: 9
+  Total Value: €17365.18
+  Buy Value: €990.00
+  Sell Value: €1020.00
+  Fees: €3.01
+  Net P&L: €26.98
+
+LINK-EUR:
+  Total Trades: 9
+  Total Value: €135353.71
+  Buy Value: €990.00
+  Sell Value: €1020.00
+  Fees: €3.02
+  Net P&L: €26.99
+
+XRP-EUR:
+  Total Trades: 10
+  Total Value: €58625.40
+  Buy Value: €990.00
+  Sell Value: €1020.00
+  Fees: €3.01
+  Net P&L: €26.98

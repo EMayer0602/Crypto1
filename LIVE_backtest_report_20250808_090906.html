@@ -1,0 +1,384 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>LIVE Crypto Backtest Report 20250808_090906</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+                .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 10px; }
+                .header { text-align: center; color: #2c3e50; margin-bottom: 30px; }
+                .summary { background-color: #e8f4fd; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+                .ticker-section { margin-bottom: 40px; border-bottom: 2px solid #eee; padding-bottom: 20px; }
+                .ticker-header { color: #27ae60; font-size: 24px; margin-bottom: 15px; }
+                .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+                .metric { background-color: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; }
+                .metric-value { font-size: 20px; font-weight: bold; color: #2c3e50; }
+                .metric-label { font-size: 14px; color: #7f8c8d; margin-top: 5px; }
+                .trades-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                .trades-table th, .trades-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                .trades-table th { background-color: #3498db; color: white; }
+                .trades-table tr:nth-child(even) { background-color: #f2f2f2; }
+                .buy-row { background-color: #d5f4e6; }
+                .sell-row { background-color: #ffeaa7; }
+                .chart-section { margin: 20px 0; text-align: center; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🚀 LIVE Crypto Backtest Report</h1>
+                    <p>Generated on: 2025-08-08 09:09:06</p>
+                </div>
+        
+                <div class="summary">
+                    <h2>📊 Portfolio Summary</h2>
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">6</div>
+                            <div class="metric-label">Active Tickers</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">1571.89%</div>
+                            <div class="metric-label">Average Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">77</div>
+                            <div class="metric-label">Total Trades</div>
+                        </div>
+                    </div>
+                </div>
+        
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 BTC-EUR</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€5,000</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€25,770.00</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">415.40%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">17</div>
+                            <div class="metric-label">Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=5, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                    </div>
+            
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 Chart saved as <a href="chart_BTC_EUR.html" target="_blank">chart_BTC_EUR.html</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Quantity</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="buy-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>2025-08-08</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€98567.8000</td>
+                                <td>€98208.1200</td>
+                                <td>0.2624</td>
+                                <td>€-140.93</td>
+                                <td>OPEN</td>
+                            </tr>
+                        </table></div>
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 ETH-EUR</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€3,000</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€18,061.55</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">502.05%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">10</div>
+                            <div class="metric-label">Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=13, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                    </div>
+            
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 Chart saved as <a href="chart_ETH_EUR.html" target="_blank">chart_ETH_EUR.html</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Quantity</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="buy-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>2025-08-08</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€3018.1800</td>
+                                <td>€3142.7800</td>
+                                <td>5.7470</td>
+                                <td>€684.89</td>
+                                <td>OPEN</td>
+                            </tr>
+                        </table></div>
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 DOGE-EUR</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€2,000</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€61,316.85</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">2965.84%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">13</div>
+                            <div class="metric-label">Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=7, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                    </div>
+            
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 Chart saved as <a href="chart_DOGE_EUR.html" target="_blank">chart_DOGE_EUR.html</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Quantity</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="buy-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>2025-08-08</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€0.1700</td>
+                                <td>€0.1800</td>
+                                <td>349,160.1649</td>
+                                <td>€1,287.52</td>
+                                <td>OPEN</td>
+                            </tr>
+                        </table></div>
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 SOL-EUR</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€2,000</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€21,435.71</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">971.79%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">11</div>
+                            <div class="metric-label">Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=9, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                    </div>
+            
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 Chart saved as <a href="chart_SOL_EUR.html" target="_blank">chart_SOL_EUR.html</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Quantity</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="buy-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>2025-08-08</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€139.7600</td>
+                                <td>€143.4200</td>
+                                <td>149.4587</td>
+                                <td>€509.13</td>
+                                <td>OPEN</td>
+                            </tr>
+                        </table></div>
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 LINK-EUR</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€1,500</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€17,391.58</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">1059.44%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">14</div>
+                            <div class="metric-label">Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=6, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                    </div>
+            
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 Chart saved as <a href="chart_LINK_EUR.html" target="_blank">chart_LINK_EUR.html</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Quantity</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="buy-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>2025-08-08</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€14.0700</td>
+                                <td>€14.2800</td>
+                                <td>1,217.4968</td>
+                                <td>€234.75</td>
+                                <td>OPEN</td>
+                            </tr>
+                        </table></div>
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 XRP-EUR</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€1,000</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€36,168.16</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">3516.82%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">12</div>
+                            <div class="metric-label">Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=11, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                    </div>
+            
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 Chart saved as <a href="chart_XRP_EUR.html" target="_blank">chart_XRP_EUR.html</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Quantity</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="buy-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>2025-08-08</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€2.5500</td>
+                                <td>€2.5500</td>
+                                <td>14,174.4638</td>
+                                <td>€23.49</td>
+                                <td>OPEN</td>
+                            </tr>
+                        </table></div>
+            </div>
+        </body>
+        </html>
+        

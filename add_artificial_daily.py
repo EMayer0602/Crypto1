@@ -3,22 +3,44 @@
 import pandas as pd
 from datetime import datetime
 import os
+import sys
+
+# Add current directory to path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 def add_artificial_daily_entry():
     """
-    Füge künstlichen Tageseintrag mit Bitpanda Real-time Daten hinzu
+    Füge künstlichen Tageseintrag mit Bitpanda Live-Daten hinzu
     O = C = Last Price, H = Ask, L = Bid, V = -1000 (artificial marker)
+    
+    NEU: Nutzt bitpanda_live_integration.py für echte Bitpanda API-Daten
     """
     
-    print("🤖 KÜNSTLICHE TAGESEINTRÄGE ERSTELLEN")
+    print("🤖 KÜNSTLICHE TAGESEINTRÄGE ERSTELLEN (MIT LIVE API)")
     print("="*60)
     
-    # Lade Real-time Daten
+    # Versuche zuerst Live-Integration zu nutzen
+    try:
+        from bitpanda_live_integration import run_live_integration
+        print("🔗 Nutze Bitpanda Live Integration...")
+        
+        integration = run_live_integration()
+        print("✅ Live-Integration erfolgreich - Daten bereits aktualisiert!")
+        return
+        
+    except ImportError:
+        print("⚠️ Live-Integration nicht verfügbar - Fallback auf lokale CSV")
+    except Exception as e:
+        print(f"⚠️ Live-Integration Fehler: {e}")
+        print("🔄 Fallback auf lokale current_market_prices.csv")
+    
+    # Fallback: Lade lokale Real-time Daten
     realtime_file = "current_market_prices.csv"
     
     if not os.path.exists(realtime_file):
         print(f"❌ {realtime_file} nicht gefunden!")
-        print("🔄 Führe zuerst update_yahoo_bitpanda.py aus")
+        print("🔄 Führe zuerst bitpanda_live_integration.py aus")
+        print("   oder update_yahoo_bitpanda.py für Fallback-Daten")
         return
     
     # Lade Bitpanda Real-time Daten

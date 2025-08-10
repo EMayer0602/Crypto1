@@ -1,0 +1,87 @@
+{
+  "generation_time": "2025-08-10T19:18:23.175004",
+  "date": "2025-08-10",
+  "total_orders": 6,
+  "current_prices": {
+    "BTC-EUR": 101769.734375,
+    "ETH-EUR": 3635.453857421875,
+    "XRP-EUR": 2.7402446269989014,
+    "DOGE-EUR": 0.2009558081626892,
+    "SOL-EUR": 156.22242736816406,
+    "LINK-EUR": 19.24596405029297
+  },
+  "orders": [
+    {
+      "timestamp": "2025-08-10 19:18:23",
+      "pair": "BTC-EUR",
+      "ticker": "BTC",
+      "action": "Buy",
+      "quantity": 0.001,
+      "price": 101667.964640625,
+      "current_market_price": 101769.734375,
+      "order_value_eur": 101.769734375,
+      "ready_to_send": true,
+      "note": "Test-Signal - basierend auf aktuellen Preisen"
+    },
+    {
+      "timestamp": "2025-08-10 19:18:23",
+      "pair": "ETH-EUR",
+      "ticker": "ETH",
+      "action": "Buy",
+      "quantity": 0.01,
+      "price": 3631.818403564453,
+      "current_market_price": 3635.453857421875,
+      "order_value_eur": 36.35453857421875,
+      "ready_to_send": true,
+      "note": "Test-Signal - basierend auf aktuellen Preisen"
+    },
+    {
+      "timestamp": "2025-08-10 19:18:23",
+      "pair": "XRP-EUR",
+      "ticker": "XRP",
+      "action": "Buy",
+      "quantity": 1,
+      "price": 2.7375043823719025,
+      "current_market_price": 2.7402446269989014,
+      "order_value_eur": 2.7402446269989014,
+      "ready_to_send": true,
+      "note": "Test-Signal - basierend auf aktuellen Preisen"
+    },
+    {
+      "timestamp": "2025-08-10 19:18:23",
+      "pair": "DOGE-EUR",
+      "ticker": "DOGE",
+      "action": "Buy",
+      "quantity": 1,
+      "price": 0.20075485235452653,
+      "current_market_price": 0.2009558081626892,
+      "order_value_eur": 0.2009558081626892,
+      "ready_to_send": true,
+      "note": "Test-Signal - basierend auf aktuellen Preisen"
+    },
+    {
+      "timestamp": "2025-08-10 19:18:23",
+      "pair": "SOL-EUR",
+      "ticker": "SOL",
+      "action": "Buy",
+      "quantity": 1,
+      "price": 156.0662049407959,
+      "current_market_price": 156.22242736816406,
+      "order_value_eur": 156.22242736816406,
+      "ready_to_send": true,
+      "note": "Test-Signal - basierend auf aktuellen Preisen"
+    },
+    {
+      "timestamp": "2025-08-10 19:18:23",
+      "pair": "LINK-EUR",
+      "ticker": "LINK",
+      "action": "Buy",
+      "quantity": 1,
+      "price": 19.226718086242677,
+      "current_market_price": 19.24596405029297,
+      "order_value_eur": 19.24596405029297,
+      "ready_to_send": true,
+      "note": "Test-Signal - basierend auf aktuellen Preisen"
+    }
+  ]
+}

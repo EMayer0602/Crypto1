@@ -1,0 +1,887 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>🚀 UNIFIED Crypto Trading Analysis Report 20250809_151713</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; line-height: 1.6; }
+                .container { max-width: 1400px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 10px; }
+                .header { text-align: center; color: #2c3e50; margin-bottom: 30px; background: linear-gradient(45deg, #3498db, #2ecc71); color: white; padding: 20px; border-radius: 10px; }
+                .summary { background-color: #e8f4fd; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+                .ticker-section { margin-bottom: 40px; border-bottom: 3px solid #eee; padding-bottom: 20px; page-break-inside: avoid; }
+                .ticker-header { color: #27ae60; font-size: 24px; margin-bottom: 15px; background: #ecf0f1; padding: 15px; border-radius: 8px; }
+                .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+                .metric { background-color: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; border: 2px solid #dee2e6; }
+                .metric-value { font-size: 20px; font-weight: bold; color: #2c3e50; }
+                .metric-label { font-size: 14px; color: #7f8c8d; margin-top: 5px; }
+                .trades-table { width: 100%; border-collapse: collapse; margin: 20px 0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                .trades-table th, .trades-table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+                .trades-table th { background-color: #3498db; color: white; font-weight: bold; text-align: center; }
+                .trades-table tr:nth-child(even) { background-color: #f2f2f2; }
+                .trades-table tr:hover { background-color: #d5dbdb; }
+                .buy-row { background-color: #d5f4e6; }
+                .sell-row { background-color: #ffeaa7; }
+                .chart-section { margin: 20px 0; text-align: center; background: #f8f9fa; padding: 15px; border-radius: 8px; }
+                .strategy-section { background: #fff3cd; padding: 15px; margin: 15px 0; border-radius: 8px; border-left: 4px solid #ffc107; }
+                .signal-badge { display: inline-block; margin: 3px; padding: 6px 12px; border-radius: 15px; color: white; font-size: 12px; font-weight: bold; }
+                .buy-signal { background: #3498db; }
+                .sell-signal { background: #e74c3c; }
+                .support-signal { background: #27ae60; }
+                .resistance-signal { background: #e67e22; }
+                .positive { color: #27ae60; font-weight: bold; }
+                .negative { color: #e74c3c; font-weight: bold; }
+                .neutral { color: #f39c12; font-weight: bold; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🚀 UNIFIED Crypto Trading Analysis Report</h1>
+                    <h2>📊 Live Analysis + Strategy Overview</h2>
+                    <p>Generated on: 2025-08-09 15:17:13</p>
+                </div>
+        
+                <div class="summary">
+                    <h2>📊 Unified Portfolio Summary</h2>
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">6</div>
+                            <div class="metric-label">Active Tickers</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">1589.93%</div>
+                            <div class="metric-label">Average Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">56</div>
+                            <div class="metric-label">Total Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">LINK-EUR</div>
+                            <div class="metric-label">Best Performer (3168.84%)</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value neutral">N/A</div>
+                            <div class="metric-label">Worst Performer (0.00%)</div>
+                        </div>
+                    </div>
+                </div>
+        
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 BTC-EUR - Complete Analysis</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€5,000</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€26,878.91</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">437.58%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">9</div>
+                            <div class="metric-label">Total Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=10, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">100.0%</div>
+                            <div class="metric-label">Win Rate (9W/0L)</div>
+                        </div>
+                    </div>
+            
+                    <div class="strategy-section">
+                        <h3>🎯 Strategy Analysis - Extended Signals</h3>
+                        <div style='margin:15px 0'>
+                            <span class='signal-badge buy-signal'>🔵 9 BUY</span>
+                            <span class='signal-badge sell-signal'>🟠 8 SELL</span>
+                            <span class='signal-badge support-signal'>🟢 9 SUPPORT</span>
+                            <span class='signal-badge resistance-signal'>🔴 10 RESISTANCE</span>
+                        </div>
+                
+                        <h4>📍 Latest 5 Extended Signals</h4>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Action</th>
+                                <th>Level</th>
+                                <th>Signal</th>
+                            </tr>
+                    
+                            <tr>
+                                <td>2025-06-11</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€96526.1953</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-24</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€87815.1875</td>
+                                <td>✅</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-07-16</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€102739.2422</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-07-31</td>
+                                <td>resistance</td>
+                                <td><strong>NONE</strong></td>
+                                <td>€103105.9453</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-08-03</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€97071.6328</td>
+                                <td>✅</td>
+                            </tr>
+                        </table></div>
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 <a href="chart_BTC_EUR.html" target="_blank">🔗 Click here to view interactive chart for BTC-EUR</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Live Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Shares/Quantity</th>
+                                <th>Commission</th>
+                                <th>Gross PnL</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="buy-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>Current</td>
+                                <td><strong>🔓 BUY (OPEN)</strong></td>
+                                <td>€97070.6700</td>
+                                <td>€100376.7000</td>
+                                <td>0.2680</td>
+                                <td>€46.83</td>
+                                <td class="positive">€886.02</td>
+                                <td class="positive">€839.19</td>
+                                <td>OPEN</td>
+                            </tr>
+                        </table>
+                        <div class="summary" style="margin-top:15px;">
+                            <h4>📊 14-Day Trading Summary</h4>
+                            <div class="metrics">
+                                <div class="metric">
+                                    <div class="metric-value">1</div>
+                                    <div class="metric-label">Recent Trades</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value positive">€839.19</div>
+                                    <div class="metric-label">Net PnL</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">€46.83</div>
+                                    <div class="metric-label">Total Fees</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">0.2680</div>
+                                    <div class="metric-label">Total Volume</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 ETH-EUR - Complete Analysis</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€3,000</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€15,077.16</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">402.57%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">9</div>
+                            <div class="metric-label">Total Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=10, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">77.8%</div>
+                            <div class="metric-label">Win Rate (7W/2L)</div>
+                        </div>
+                    </div>
+            
+                    <div class="strategy-section">
+                        <h3>🎯 Strategy Analysis - Extended Signals</h3>
+                        <div style='margin:15px 0'>
+                            <span class='signal-badge buy-signal'>🔵 9 BUY</span>
+                            <span class='signal-badge sell-signal'>🟠 9 SELL</span>
+                            <span class='signal-badge support-signal'>🟢 11 SUPPORT</span>
+                            <span class='signal-badge resistance-signal'>🔴 11 RESISTANCE</span>
+                        </div>
+                
+                        <h4>📍 Latest 5 Extended Signals</h4>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Action</th>
+                                <th>Level</th>
+                                <th>Signal</th>
+                            </tr>
+                    
+                            <tr>
+                                <td>2025-05-30</td>
+                                <td>resistance</td>
+                                <td><strong>NONE</strong></td>
+                                <td>€2388.5374</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-07</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€2109.7170</td>
+                                <td>✅</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-12</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€2459.8779</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-24</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€1937.5829</td>
+                                <td>✅</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-08-03</td>
+                                <td>support</td>
+                                <td><strong>NONE</strong></td>
+                                <td>€2926.7568</td>
+                                <td>❌</td>
+                            </tr>
+                        </table></div>
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 <a href="chart_ETH_EUR.html" target="_blank">🔗 Click here to view interactive chart for ETH-EUR</a></p>
+                            </div>
+                        <p>ℹ️ No trades in the last 14 days</p></div>
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 DOGE-EUR - Complete Analysis</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€3,500</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€79,164.10</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">2161.83%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">7</div>
+                            <div class="metric-label">Total Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=10, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">85.7%</div>
+                            <div class="metric-label">Win Rate (6W/1L)</div>
+                        </div>
+                    </div>
+            
+                    <div class="strategy-section">
+                        <h3>🎯 Strategy Analysis - Extended Signals</h3>
+                        <div style='margin:15px 0'>
+                            <span class='signal-badge buy-signal'>🔵 7 BUY</span>
+                            <span class='signal-badge sell-signal'>🟠 7 SELL</span>
+                            <span class='signal-badge support-signal'>🟢 10 SUPPORT</span>
+                            <span class='signal-badge resistance-signal'>🔴 10 RESISTANCE</span>
+                        </div>
+                
+                        <h4>📍 Latest 5 Extended Signals</h4>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Action</th>
+                                <th>Level</th>
+                                <th>Signal</th>
+                            </tr>
+                    
+                            <tr>
+                                <td>2025-05-24</td>
+                                <td>resistance</td>
+                                <td><strong>NONE</strong></td>
+                                <td>€0.2172</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-12</td>
+                                <td>resistance</td>
+                                <td><strong>NONE</strong></td>
+                                <td>€0.1734</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-24</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€0.1316</td>
+                                <td>✅</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-07-22</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€0.2347</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-08-03</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€0.1650</td>
+                                <td>✅</td>
+                            </tr>
+                        </table></div>
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 <a href="chart_DOGE_EUR.html" target="_blank">🔗 Click here to view interactive chart for DOGE-EUR</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Live Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Shares/Quantity</th>
+                                <th>Commission</th>
+                                <th>Gross PnL</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="buy-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>Current</td>
+                                <td><strong>🔓 BUY (OPEN)</strong></td>
+                                <td>€0.1600</td>
+                                <td>€0.2000</td>
+                                <td>398,470.0000</td>
+                                <td>€118.31</td>
+                                <td class="positive">€13,554.69</td>
+                                <td class="positive">€13,436.38</td>
+                                <td>OPEN</td>
+                            </tr>
+                        </table>
+                        <div class="summary" style="margin-top:15px;">
+                            <h4>📊 14-Day Trading Summary</h4>
+                            <div class="metrics">
+                                <div class="metric">
+                                    <div class="metric-value">1</div>
+                                    <div class="metric-label">Recent Trades</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value positive">€13,436.38</div>
+                                    <div class="metric-label">Net PnL</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">€118.31</div>
+                                    <div class="metric-label">Total Fees</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">398,470.0000</div>
+                                    <div class="metric-label">Total Volume</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 SOL-EUR - Complete Analysis</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€2,000</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€17,187.95</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">759.40%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">10</div>
+                            <div class="metric-label">Total Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=10, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">100.0%</div>
+                            <div class="metric-label">Win Rate (10W/0L)</div>
+                        </div>
+                    </div>
+            
+                    <div class="strategy-section">
+                        <h3>🎯 Strategy Analysis - Extended Signals</h3>
+                        <div style='margin:15px 0'>
+                            <span class='signal-badge buy-signal'>🔵 10 BUY</span>
+                            <span class='signal-badge sell-signal'>🟠 9 SELL</span>
+                            <span class='signal-badge support-signal'>🟢 11 SUPPORT</span>
+                            <span class='signal-badge resistance-signal'>🔴 11 RESISTANCE</span>
+                        </div>
+                
+                        <h4>📍 Latest 5 Extended Signals</h4>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Action</th>
+                                <th>Level</th>
+                                <th>Signal</th>
+                            </tr>
+                    
+                            <tr>
+                                <td>2025-05-15</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€164.4940</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-12</td>
+                                <td>resistance</td>
+                                <td><strong>NONE</strong></td>
+                                <td>€144.2853</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-24</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€114.4488</td>
+                                <td>✅</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-07-24</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€175.2441</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-08-03</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€136.7158</td>
+                                <td>✅</td>
+                            </tr>
+                        </table></div>
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 <a href="chart_SOL_EUR.html" target="_blank">🔗 Click here to view interactive chart for SOL-EUR</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Live Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Shares/Quantity</th>
+                                <th>Commission</th>
+                                <th>Gross PnL</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="buy-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>Current</td>
+                                <td><strong>🔓 BUY (OPEN)</strong></td>
+                                <td>€139.7600</td>
+                                <td>€152.6700</td>
+                                <td>112.8000</td>
+                                <td>€28.38</td>
+                                <td class="positive">€1,455.86</td>
+                                <td class="positive">€1,427.49</td>
+                                <td>OPEN</td>
+                            </tr>
+                        </table>
+                        <div class="summary" style="margin-top:15px;">
+                            <h4>📊 14-Day Trading Summary</h4>
+                            <div class="metrics">
+                                <div class="metric">
+                                    <div class="metric-value">1</div>
+                                    <div class="metric-label">Recent Trades</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value positive">€1,427.49</div>
+                                    <div class="metric-label">Net PnL</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">€28.38</div>
+                                    <div class="metric-label">Total Fees</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">112.8000</div>
+                                    <div class="metric-label">Total Volume</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 LINK-EUR - Complete Analysis</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€1,500</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€49,032.61</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">3168.84%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">10</div>
+                            <div class="metric-label">Total Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=10, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">100.0%</div>
+                            <div class="metric-label">Win Rate (10W/0L)</div>
+                        </div>
+                    </div>
+            
+                    <div class="strategy-section">
+                        <h3>🎯 Strategy Analysis - Extended Signals</h3>
+                        <div style='margin:15px 0'>
+                            <span class='signal-badge buy-signal'>🔵 10 BUY</span>
+                            <span class='signal-badge sell-signal'>🟠 9 SELL</span>
+                            <span class='signal-badge support-signal'>🟢 11 SUPPORT</span>
+                            <span class='signal-badge resistance-signal'>🔴 9 RESISTANCE</span>
+                        </div>
+                
+                        <h4>📍 Latest 5 Extended Signals</h4>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Action</th>
+                                <th>Level</th>
+                                <th>Signal</th>
+                            </tr>
+                    
+                            <tr>
+                                <td>2025-06-07</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€11.2828</td>
+                                <td>✅</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-12</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€13.4885</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-24</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€10.1326</td>
+                                <td>✅</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-07-24</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€16.7518</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-08-03</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€13.5020</td>
+                                <td>✅</td>
+                            </tr>
+                        </table></div>
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 <a href="chart_LINK_EUR.html" target="_blank">🔗 Click here to view interactive chart for LINK-EUR</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Live Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Shares/Quantity</th>
+                                <th>Commission</th>
+                                <th>Gross PnL</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="buy-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>Current</td>
+                                <td><strong>🔓 BUY (OPEN)</strong></td>
+                                <td>€13.5000</td>
+                                <td>€17.0800</td>
+                                <td>2,874.0000</td>
+                                <td>€69.85</td>
+                                <td class="positive">€10,295.82</td>
+                                <td class="positive">€10,225.97</td>
+                                <td>OPEN</td>
+                            </tr>
+                        </table>
+                        <div class="summary" style="margin-top:15px;">
+                            <h4>📊 14-Day Trading Summary</h4>
+                            <div class="metrics">
+                                <div class="metric">
+                                    <div class="metric-value">1</div>
+                                    <div class="metric-label">Recent Trades</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value positive">€10,225.97</div>
+                                    <div class="metric-label">Net PnL</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">€69.85</div>
+                                    <div class="metric-label">Total Fees</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">2,874.0000</div>
+                                    <div class="metric-label">Total Volume</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <div class="ticker-section">
+                    <h2 class="ticker-header">💎 XRP-EUR - Complete Analysis</h2>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">€1,000</div>
+                            <div class="metric-label">Initial Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">€27,093.65</div>
+                            <div class="metric-label">Final Capital</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">2609.37%</div>
+                            <div class="metric-label">Total Return</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">11</div>
+                            <div class="metric-label">Total Trades</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">p=10, tw=1</div>
+                            <div class="metric-label">Optimal Parameters</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value positive">100.0%</div>
+                            <div class="metric-label">Win Rate (11W/0L)</div>
+                        </div>
+                    </div>
+            
+                    <div class="strategy-section">
+                        <h3>🎯 Strategy Analysis - Extended Signals</h3>
+                        <div style='margin:15px 0'>
+                            <span class='signal-badge buy-signal'>🔵 11 BUY</span>
+                            <span class='signal-badge sell-signal'>🟠 11 SELL</span>
+                            <span class='signal-badge support-signal'>🟢 12 SUPPORT</span>
+                            <span class='signal-badge resistance-signal'>🔴 13 RESISTANCE</span>
+                        </div>
+                
+                        <h4>📍 Latest 5 Extended Signals</h4>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Action</th>
+                                <th>Level</th>
+                                <th>Signal</th>
+                            </tr>
+                    
+                            <tr>
+                                <td>2025-06-11</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€2.0307</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-06-24</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€1.7513</td>
+                                <td>✅</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-07-23</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€3.0404</td>
+                                <td>❌</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-08-03</td>
+                                <td>support</td>
+                                <td><strong>BUY</strong></td>
+                                <td>€2.3864</td>
+                                <td>✅</td>
+                            </tr>
+                        
+                            <tr>
+                                <td>2025-08-09</td>
+                                <td>resistance</td>
+                                <td><strong>SELL</strong></td>
+                                <td>€2.8662</td>
+                                <td>❌</td>
+                            </tr>
+                        </table></div>
+                            <div class="chart-section">
+                                <h3>📈 Interactive Chart</h3>
+                                <p>📊 <a href="chart_XRP_EUR.html" target="_blank">🔗 Click here to view interactive chart for XRP-EUR</a></p>
+                            </div>
+                        
+                        <h3>📅 Recent Live Trades (Last 14 Days)</h3>
+                        <table class="trades-table">
+                            <tr>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th>Action</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Shares/Quantity</th>
+                                <th>Commission</th>
+                                <th>Gross PnL</th>
+                                <th>Net PnL</th>
+                                <th>Status</th>
+                            </tr>
+                    
+                            <tr class="sell-row">
+                                <td>2025-08-03 00:00:00</td>
+                                <td>2025-08-09</td>
+                                <td><strong>🔒 BUY → SELL</strong></td>
+                                <td>€2.5500</td>
+                                <td>€2.8200</td>
+                                <td>9,640.0000</td>
+                                <td>€93.12</td>
+                                <td class="positive">€2,660.05</td>
+                                <td class="positive">€2,566.93</td>
+                                <td>CLOSED</td>
+                            </tr>
+                        </table>
+                        <div class="summary" style="margin-top:15px;">
+                            <h4>📊 14-Day Trading Summary</h4>
+                            <div class="metrics">
+                                <div class="metric">
+                                    <div class="metric-value">1</div>
+                                    <div class="metric-label">Recent Trades</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value positive">€2,566.93</div>
+                                    <div class="metric-label">Net PnL</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">€93.12</div>
+                                    <div class="metric-label">Total Fees</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-value">9,640.0000</div>
+                                    <div class="metric-label">Total Volume</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+            </div>
+        </body>
+        </html>
+        

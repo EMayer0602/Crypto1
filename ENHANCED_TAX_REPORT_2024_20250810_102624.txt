@@ -1,0 +1,67 @@
+CRYPTOCURRENCY TAX REPORT 2024
+======================================================================
+Report Generated: 2025-08-10 10:26:24
+Tax Year: 2024-2025
+Taxpayer: [Your Name Here]
+Report Type: Enhanced - Actual Transactions + Price Data
+======================================================================
+
+TAX SUMMARY
+------------------------------
+Total Buy Value: €8239.99
+Total Sell Value: €6119.99
+Total Trading Fees: €21.54
+Net Capital Gain/Loss: €-2141.54
+Number of Transactions: 15
+
+CAPITAL GAINS/LOSSES CALCULATION
+----------------------------------------
+CAPITAL LOSS: €2141.54
+Status: Tax loss (may be deductible)
+
+Calculation Method: FIFO (First In, First Out)
+Currency: EUR (Euro)
+All fees included in cost basis calculation
+
+DETAILED TRANSACTION RECORD FOR TAX AUTHORITIES
+======================================================================
+Format: Date | Crypto | Action | Quantity | Price/Unit | Total Value | Fees
+----------------------------------------------------------------------
+ 1. 2025-08-10 | BTC-EUR  | BUY  |     0.010000 | €99981.45 | €   1000.00 | €  1.50
+ 2. 2025-08-10 | ETH-EUR  | BUY  |     0.220000 | € 3658.38 | €    800.00 | €  1.20
+ 3. 2025-08-10 | DOGE-EUR | BUY  |  2420.000000 | €    0.21 | €    500.00 | €  0.75
+ 4. 2025-08-10 | BTC-EUR  | BUY  |     0.010000 | €100343.75 | €    989.99 | €  1.48
+ 5. 2025-08-10 | ETH-EUR  | BUY  |     0.280000 | € 3590.60 | €    990.00 | €  1.49
+ 6. 2025-08-10 | DOGE-EUR | BUY  |  4870.000000 | €    0.20 | €    990.00 | €  1.48
+ 7. 2025-08-10 | SOL-EUR  | BUY  |     6.400000 | €  155.04 | €    990.00 | €  1.48
+ 8. 2025-08-10 | LINK-EUR | BUY  |    53.000000 | €   18.64 | €    990.00 | €  1.49
+ 9. 2025-08-10 | XRP-EUR  | BUY  |   360.000000 | €    2.77 | €    990.00 | €  1.48
+10. 2025-08-10 | BTC-EUR  | SELL |     0.010000 | €103384.47 | €   1019.99 | €  1.53
+11. 2025-08-10 | ETH-EUR  | SELL |     0.280000 | € 3699.41 | €   1020.00 | €  1.53
+12. 2025-08-10 | DOGE-EUR | SELL |  4870.000000 | €    0.21 | €   1020.00 | €  1.53
+13. 2025-08-10 | SOL-EUR  | SELL |     6.400000 | €  159.74 | €   1020.00 | €  1.53
+14. 2025-08-10 | LINK-EUR | SELL |    53.000000 | €   19.20 | €   1020.00 | €  1.53
+15. 2025-08-10 | XRP-EUR  | SELL |   360.000000 | €    2.86 | €   1020.00 | €  1.53
+
+======================================================================
+TAX COMPLIANCE INFORMATION
+======================================================================
+1. This report contains all cryptocurrency trading activity
+2. All amounts are in EUR (Euro)
+3. Trading fees are included in cost basis calculations
+4. Method: FIFO (First In, First Out) for capital gains
+5. Platform: Bitpanda (Paper Trading)
+6. Keep this report and all source files for tax records
+7. Consult with a tax professional for proper reporting
+
+SUPPORTING DOCUMENTS:
+- Original trading statements from Bitpanda
+- Price data and market records
+- All CSV files and trading logs
+- This comprehensive tax report
+
+RECOMMENDED NEXT STEPS:
+1. Review this report with a tax advisor
+2. Include capital gains/losses in tax return
+3. Keep all supporting documents for audit purposes
+4. Update records for ongoing tax compliance

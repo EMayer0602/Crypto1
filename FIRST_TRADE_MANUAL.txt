@@ -1,0 +1,28 @@
+🎯 ERSTER HEUTIGER TRADE - FUSION EINGABE
+=========================================
+
+📋 TRADE DETAILS:
+   🪙 Pair: BTC-EUR
+   📊 Action: BUY
+   📈 Quantity: 0.009886
+   💰 Limit Price: €99,127.64
+   📍 Current Market: €101,150.66
+   💵 Order Value: €979.98
+   📈 Spread: -2.0% (guter Limit unter Marktpreis)
+
+📝 MANUELLE EINGABE SCHRITTE:
+=============================
+1. 🔍 In Fusion: Suche "BTC" oder wähle Bitcoin
+2. 🟢 Klicke den grünen "BUY" Button  
+3. ⚡ Wähle "Limit Order" (nicht Market)
+4. 📈 Quantity eingeben: 0.009886
+5. 💰 Limit Price eingeben: 99127.64
+6. 🔍 Prüfen: Order Value sollte ~€979.98 zeigen
+7. 🚀 "Place Order" klicken zum Senden
+
+⚠️ WICHTIG:
+- Limit Price ist UNTER Marktpreis (gut für Ausführung)
+- Nur ERSTER von 12 heutigen Trades
+- Nach diesem können weitere folgen
+
+✅ BEREIT FÜR EINGABE IN FUSION!

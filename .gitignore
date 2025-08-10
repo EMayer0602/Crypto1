@@ -1,14 +1,80 @@
-gitignore
-# Alle Dateien ignorieren ...
-*
+# 🔒 SICHERHEITS-UPDATE: API-Keys und Secrets schützen!
 
-# ... außer .py-Dateien (Achtung: nur im Hauptverzeichnis!)
-!*.py
+# API Keys und Secrets - NIEMALS COMMITTEN!
+.env
+.env.local  
+.env.production
+.env.development
+*.key
+*api_key*
+*secret*
+*credentials*
+
+# Bitpanda API
+bitpanda_api.key
+bitpanda_secret.json
+api_config.secret.py
+
+# Konfigurationsdateien mit Secrets
+config.secret.py
+secrets.json
+credentials.json
+private_config.py
+
+# Trading Keys
+trading_keys.txt
+live_api_keys.json
+production.env
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
 *.pyc
-# ... außer .gitignore selbst
-!.gitignore
-
-# Optional: Auch .py-Dateien aus Unterordnern erlauben (empfohlen)
-!**/*.py
-**/*.pyc
 *_pycache/*.pyc
+
+# Logs mit potentiell sensiblen Daten
+api_calls.log
+trading.log
+*.secret.log
+
+# Backup-Dateien
+*.backup
+*.bak
+*_backup.*
+
+# Temporary files
+*.tmp
+*.temp
+temp_*
+
+# CSV Reports mit potentiell sensiblen Daten
+*_private_*.csv
+*_live_trading_*.csv
+*_api_calls_*.csv
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Allow Python files and specific extensions
+!*.py
+!*.md
+!*.txt
+!*.csv
+!*.html
+!*.json
+
+# But exclude secret configs
+config.secret.py

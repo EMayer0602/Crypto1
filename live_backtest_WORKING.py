@@ -18,12 +18,20 @@ from crypto_tickers import crypto_tickers
 
 def get_14_day_trades_report():
     """
-    Erstellt einen 14-Tage Trade Report mit dem gewünschten Header-Format:
+    Erstellt einen HEUTE-ONLY Trade Report mit dem gewünschten Header-Format:
     Date; Ticker; Quantity; Price; Order Type; Limit Price; Open/Close; Realtime Price Bitpanda
-    """
-    print("\n📊 Creating 14-Day Trades Report...")
     
-    # Cutoff date for last 14 days
+    🎯 MODIFIED: Only outputs trades for TODAY (2025-08-10) - NO historical orders!
+    """
+    print("\n📊 Creating TODAY-ONLY Trades Report...")
+    print("🎯 FILTERING: Only orders for TODAY will be transmitted")
+    print("⛔ BLOCKED: All historical orders from 2024 are ignored")
+    
+    # TODAY ONLY - no historical orders
+    today_date = datetime.now().date()
+    today_str = today_date.strftime('%Y-%m-%d')
+    print(f"📅 Target Date: {today_str} (TODAY ONLY!)")
+    
     cutoff_date = datetime.now() - timedelta(days=14)
     
     # Header as requested
@@ -48,49 +56,75 @@ def get_14_day_trades_report():
                 current_price = 0.0
                 print(f"   ⚠️ Could not fetch current price for {symbol}")
             
-            # Look for recent trades (this is a template - in real implementation 
-            # you would read from your actual trades database/CSV files)
+            # 🎯 GET REAL TRADES FOR TODAY ONLY - FROM ACTUAL BACKTEST RESULTS
+            # ⛔ All 2024 orders are blocked and will NOT be transmitted
             
-            # Example trades for the last 14 days (you'll need to replace this with actual data)
-            sample_trades = [
-                {
-                    'date': (datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d'),
-                    'ticker': ticker_name,
-                    'quantity': round(1000 / current_price, 6) if current_price > 0 else 0,
-                    'price': current_price * 0.99,  # Example buy price
-                    'order_type': 'Limit',
-                    'limit_price': current_price * 0.98,
-                    'open_close': 'Open',
-                    'realtime_price': current_price
-                },
-                {
-                    'date': (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d'),
-                    'ticker': ticker_name,
-                    'quantity': round(1000 / current_price, 6) if current_price > 0 else 0,
-                    'price': current_price * 1.02,  # Example sell price
-                    'order_type': 'Limit',
-                    'limit_price': current_price * 1.01,
-                    'open_close': 'Close',
-                    'realtime_price': current_price
-                }
-            ]
-            
-            # Add trades to the list (only if they're within 14 days)
-            for trade in sample_trades:
-                trade_date = datetime.strptime(trade['date'], '%Y-%m-%d')
-                if trade_date >= cutoff_date:
-                    all_trades.append(trade)
+            try:
+                # Run backtest to get real trades for today
+                from crypto_backtesting_module import run_backtest
+                
+                if ticker_name in crypto_tickers:
+                    config = crypto_tickers[ticker_name]
+                    backtest_result = run_backtest(ticker_name, config)
+                    
+                    if backtest_result and 'matched_trades' in backtest_result:
+                        matched_trades = backtest_result['matched_trades']
+                        
+                        if not matched_trades.empty:
+                            # Convert Date column and filter for TODAY only
+                            matched_trades['Date'] = pd.to_datetime(matched_trades['Date'])
+                            today_mask = matched_trades['Date'].dt.date == today_date
+                            today_real_trades = matched_trades[today_mask]
+                            
+                            if not today_real_trades.empty:
+                                print(f"   📊 Found {len(today_real_trades)} real trades for TODAY")
+                                
+                                # 🎯 TAKE THE 14 NEWEST TRADES (not oldest!)
+                                # Sort by Date descending (newest first) and take first 14
+                                newest_trades = today_real_trades.sort_values('Date', ascending=False).head(14)
+                                
+                                print(f"   📅 Taking {len(newest_trades)} NEWEST trades from TODAY")
+                                
+                                # Convert to the required format
+                                for _, trade_row in newest_trades.iterrows():
+                                    trade_dict = {
+                                        'date': today_str,  # TODAY ONLY!
+                                        'ticker': ticker_name,
+                                        'quantity': abs(trade_row.get('Quantity', 0)),
+                                        'price': trade_row.get('Price', current_price),
+                                        'order_type': 'Limit',
+                                        'limit_price': trade_row.get('Price', current_price),
+                                        'open_close': trade_row.get('Action', 'Open'),
+                                        'realtime_price': current_price
+                                    }
+                                    
+                                    all_trades.append(trade_dict)
+                                    print(f"   ✅ Added NEWEST trade #{len(all_trades)}: {trade_dict['open_close']} {ticker_name}")
+                            else:
+                                print(f"   ⚠️ No real trades found for TODAY ({today_str})")
+                        else:
+                            print(f"   ⚠️ No matched trades in backtest result")
+                    else:
+                        print(f"   ⚠️ Invalid backtest result for {ticker_name}")
+                else:
+                    print(f"   ⚠️ {ticker_name} not found in crypto_tickers")
+                    
+            except Exception as backtest_error:
+                print(f"   ❌ Backtest error for {ticker_name}: {backtest_error}")
+                print(f"   🔄 Skipping {ticker_name} - no trades added")
                     
         except Exception as e:
             print(f"   ❌ Error processing {ticker_name}: {e}")
     
-    # Sort trades by date (newest first)
-    all_trades.sort(key=lambda x: x['date'], reverse=True)
+    # Sort trades by date (NEWEST FIRST for today's trades)
+    all_trades.sort(key=lambda x: (x['date'], x.get('timestamp', 0)), reverse=True)
     
     # Print the report
-    print(f"\n📊 ===== 14-DAY TRADES REPORT =====")
-    print(f"📅 Period: {cutoff_date.date()} to {datetime.now().date()}")
-    print(f"🔢 Total Trades Found: {len(all_trades)}")
+    print(f"\n📊 ===== TODAY-ONLY TRADES REPORT (NEWEST FIRST) =====")
+    print(f"🎯 Date Filter: ONLY {today_str} (TODAY)")
+    print(f"📅 Selection: NEWEST trades from today only")
+    print(f"⛔ Historical Filter: ALL 2024 orders BLOCKED")
+    print(f"🔢 Total TODAY Trades: {len(all_trades)}")
     print(f"\n{header}")
     print("-" * 120)
     
@@ -99,16 +133,21 @@ def get_14_day_trades_report():
         print(line)
     
     # Save to CSV file
-    csv_filename = f"14_day_trades_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    csv_filename = f"TODAY_NEWEST_trades_{today_str.replace('-', '')}_{datetime.now().strftime('%H%M%S')}.csv"
     
     if all_trades:
         df = pd.DataFrame(all_trades)
         # Rename columns to match header
         df.columns = ['Date', 'Ticker', 'Quantity', 'Price', 'Order Type', 'Limit Price', 'Open/Close', 'Realtime Price Bitpanda']
         df.to_csv(csv_filename, sep=';', index=False)
-        print(f"\n💾 Report saved as: {csv_filename}")
+        print(f"\n💾 TODAY's NEWEST trades saved as: {csv_filename}")
+        print(f"🎯 Contains ONLY the NEWEST trades for {today_str}")
+        print(f"⛔ NO historical orders from 2024 included!")
+        print(f"📊 Total trades in file: {len(all_trades)}")
     else:
-        print(f"\n⚠️ No trades found in the last 14 days")
+        print(f"\n⚠️ No real trades found for TODAY ({today_str})")
+        print(f"💡 This means no actual trading signals were generated today")
+        print(f"🔍 Check if backtest analysis is producing trades")
     
     return all_trades
 

@@ -1,0 +1,299 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Live Backtest Report - 20250808_004351</title>
+        <meta charset="UTF-8">
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+            .container { max-width: 1600px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); }
+            h1 { color: #2c3e50; text-align: center; font-size: 2.5em; margin-bottom: 30px; border-bottom: 3px solid #3498db; padding-bottom: 15px; }
+            h2 { color: #34495e; border-left: 5px solid #3498db; padding-left: 15px; margin-top: 40px; }
+            .summary { background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%); color: white; padding: 25px; border-radius: 12px; margin: 30px 0; }
+            .success { color: #27ae60; font-weight: bold; }
+            .error { color: #e74c3c; font-weight: bold; }
+            table { width: 100%; border-collapse: collapse; margin: 25px 0; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            th { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; text-align: left; font-weight: 600; }
+            td { padding: 12px 15px; border-bottom: 1px solid #ecf0f1; }
+            tr:hover { background-color: #f8f9fa; }
+            .chart-container { margin: 40px 0; padding: 20px; background: #fafafa; border-radius: 12px; border: 1px solid #e1e8ed; }
+            .pnl-positive { color: #27ae60; font-weight: bold; }
+            .pnl-negative { color: #e74c3c; font-weight: bold; }
+            .buy-action { color: #27ae60; font-weight: bold; }
+            .sell-action { color: #e74c3c; font-weight: bold; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🚀 Live Backtest Report - 2025-08-08 00:43:51</h1>
+            
+            <div class="summary">
+                <h3>📊 Session Summary</h3>
+                <p><strong>✅ Successful Backtests:</strong> 6 tickers</p>
+                <p><strong>❌ Failed Backtests:</strong> 0 tickers</p>
+                <p><strong>📈 Recent Trades:</strong> 13 trades (last 14 days)</p>
+            </div>
+    
+            <h2>💰 PnL Performance Overview</h2>
+            <table>
+                <tr>
+                    <th>Ticker</th>
+                    <th>PnL (%)</th>
+                    <th>Past Window</th>
+                    <th>Trade Window</th>
+                    <th>Recent Trades</th>
+                    <th>Status</th>
+                </tr>
+    
+                <tr>
+                    <td><strong>BTC-EUR</strong></td>
+                    <td class="pnl-positive">415.4%</td>
+                    <td>4</td>
+                    <td>2</td>
+                    <td>2</td>
+                    <td class="success">✅ Active</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>ETH-EUR</strong></td>
+                    <td class="pnl-positive">502.1%</td>
+                    <td>11</td>
+                    <td>3</td>
+                    <td>3</td>
+                    <td class="success">✅ Active</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>DOGE-EUR</strong></td>
+                    <td class="pnl-positive">2965.8%</td>
+                    <td>4</td>
+                    <td>4</td>
+                    <td>2</td>
+                    <td class="success">✅ Active</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>SOL-EUR</strong></td>
+                    <td class="pnl-positive">971.8%</td>
+                    <td>8</td>
+                    <td>4</td>
+                    <td>2</td>
+                    <td class="success">✅ Active</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>LINK-EUR</strong></td>
+                    <td class="pnl-positive">1005.9%</td>
+                    <td>6</td>
+                    <td>2</td>
+                    <td>2</td>
+                    <td class="success">✅ Active</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>XRP-EUR</strong></td>
+                    <td class="pnl-positive">3516.8%</td>
+                    <td>8</td>
+                    <td>4</td>
+                    <td>2</td>
+                    <td class="success">✅ Active</td>
+                </tr>
+        
+            </table>
+            
+            <h2>📋 Recent Trading Activity (Last 14 Days)</h2>
+            <table>
+                <tr>
+                    <th>Ticker</th>
+                    <th>Date</th>
+                    <th>Action</th>
+                    <th>Price (€)</th>
+                    <th>Shares</th>
+                    <th>Type</th>
+                    <th>PnL</th>
+                    <th>Status</th>
+                </tr>
+    
+                <tr>
+                    <td><strong>BTC-EUR</strong></td>
+                    <td>2025-08-08</td>
+                    <td class="sell-action">SELL</td>
+                    <td>€98208.1200</td>
+                    <td>0.05</td>
+                    <td>Exit</td>
+                    <td>-140.93€</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>ETH-EUR</strong></td>
+                    <td>2025-08-08</td>
+                    <td class="sell-action">SELL</td>
+                    <td>€3142.7800</td>
+                    <td>1.00</td>
+                    <td>Exit</td>
+                    <td>684.89€</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>DOGE-EUR</strong></td>
+                    <td>2025-08-08</td>
+                    <td class="sell-action">SELL</td>
+                    <td>€0.1800</td>
+                    <td>11,000</td>
+                    <td>Exit</td>
+                    <td>1287.52€</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>SOL-EUR</strong></td>
+                    <td>2025-08-08</td>
+                    <td class="sell-action">SELL</td>
+                    <td>€143.4200</td>
+                    <td>10</td>
+                    <td>Exit</td>
+                    <td>509.13€</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>LINK-EUR</strong></td>
+                    <td>2025-08-08</td>
+                    <td class="sell-action">SELL</td>
+                    <td>€14.2800</td>
+                    <td>100</td>
+                    <td>Exit</td>
+                    <td>223.91€</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>XRP-EUR</strong></td>
+                    <td>2025-08-08</td>
+                    <td class="sell-action">SELL</td>
+                    <td>€2.5500</td>
+                    <td>300</td>
+                    <td>Exit</td>
+                    <td>23.49€</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>BTC-EUR</strong></td>
+                    <td>2025-08-03</td>
+                    <td class="buy-action">BUY</td>
+                    <td>€98567.8000</td>
+                    <td>0.05</td>
+                    <td>Entry</td>
+                    <td>N/A</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>ETH-EUR</strong></td>
+                    <td>2025-08-03</td>
+                    <td class="buy-action">BUY</td>
+                    <td>€3018.1800</td>
+                    <td>1.00</td>
+                    <td>Entry</td>
+                    <td>N/A</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>DOGE-EUR</strong></td>
+                    <td>2025-08-03</td>
+                    <td class="buy-action">BUY</td>
+                    <td>€0.1700</td>
+                    <td>11,000</td>
+                    <td>Entry</td>
+                    <td>N/A</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>SOL-EUR</strong></td>
+                    <td>2025-08-03</td>
+                    <td class="buy-action">BUY</td>
+                    <td>€139.7600</td>
+                    <td>10</td>
+                    <td>Entry</td>
+                    <td>N/A</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>LINK-EUR</strong></td>
+                    <td>2025-08-03</td>
+                    <td class="buy-action">BUY</td>
+                    <td>€14.0700</td>
+                    <td>100</td>
+                    <td>Entry</td>
+                    <td>N/A</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>XRP-EUR</strong></td>
+                    <td>2025-08-03</td>
+                    <td class="buy-action">BUY</td>
+                    <td>€2.5500</td>
+                    <td>300</td>
+                    <td>Entry</td>
+                    <td>N/A</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+                <tr>
+                    <td><strong>ETH-EUR</strong></td>
+                    <td>2025-07-31</td>
+                    <td class="sell-action">SELL</td>
+                    <td>€3236.5600</td>
+                    <td>0.05</td>
+                    <td>Exit</td>
+                    <td>6121.42€</td>
+                    <td>CLOSED</td>
+                </tr>
+        
+            </table>
+            <p><strong>Total Trades: 13</strong></p>
+            
+            <h2>📊 Interactive Trading Charts</h2>
+    
+            <div class="chart-container">
+                <h3>📈 BTC-EUR Analysis</h3>
+                <div style="color: red; padding: 20px; border: 1px solid red;"><h3>Chart Error for BTC-EUR</h3><p>Chart error for BTC-EUR: The truth value of a DataFrame is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().</p></div>
+            </div>
+        
+            <div class="chart-container">
+                <h3>📈 ETH-EUR Analysis</h3>
+                <div style="color: red; padding: 20px; border: 1px solid red;"><h3>Chart Error for ETH-EUR</h3><p>Chart error for ETH-EUR: The truth value of a DataFrame is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().</p></div>
+            </div>
+        
+            <div class="chart-container">
+                <h3>📈 DOGE-EUR Analysis</h3>
+                <div style="color: red; padding: 20px; border: 1px solid red;"><h3>Chart Error for DOGE-EUR</h3><p>Chart error for DOGE-EUR: The truth value of a DataFrame is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().</p></div>
+            </div>
+        
+            <div class="chart-container">
+                <h3>📈 SOL-EUR Analysis</h3>
+                <div style="color: red; padding: 20px; border: 1px solid red;"><h3>Chart Error for SOL-EUR</h3><p>Chart error for SOL-EUR: The truth value of a DataFrame is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().</p></div>
+            </div>
+        
+            <div class="chart-container">
+                <h3>📈 LINK-EUR Analysis</h3>
+                <div style="color: red; padding: 20px; border: 1px solid red;"><h3>Chart Error for LINK-EUR</h3><p>Chart error for LINK-EUR: The truth value of a DataFrame is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().</p></div>
+            </div>
+        
+            <div class="chart-container">
+                <h3>📈 XRP-EUR Analysis</h3>
+                <div style="color: red; padding: 20px; border: 1px solid red;"><h3>Chart Error for XRP-EUR</h3><p>Chart error for XRP-EUR: The truth value of a DataFrame is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().</p></div>
+            </div>
+        
+        </div>
+    </body>
+    </html>
+    
