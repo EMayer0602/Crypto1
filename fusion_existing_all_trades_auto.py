@@ -59,6 +59,8 @@ TAB_NAV = _env_flag('TAB_NAV','FUSION_TAB_NAV','USE_TAB_NAV', default='1') in ('
 USE_MAX_BUTTON = _env_flag('USE_MAX_BUTTON','FUSION_USE_MAX', default='1') in ('1','true','True')
 USE_BPS_BUTTONS = _env_flag('USE_BPS_BUTTONS','FUSION_USE_BPS', default='1') in ('1','true','True')
 PAPER_MODE = _env_flag('PAPER_MODE','FUSION_PAPER_MODE', default='0') in ('1','true','True')  # Paper: kein finaler Review Klick, Reset statt Absenden
+INCLUDE_LAST_DAYS = int(_env_flag('INCLUDE_LAST_DAYS','FUSION_INCLUDE_LAST_DAYS', default='0'))  # 0 = nur heute, 1 = heute + gestern, ...
+LOG_SKIPPED_TRADES = _env_flag('LOG_SKIPPED_TRADES','FUSION_LOG_SKIPPED_TRADES', default='0') in ('1','true','True')
 
 # --- Sicherheits-Flags gegen unbeabsichtigte Verkäufe ---
 DISABLE_SELLS = _env_flag('DISABLE_SELLS','FUSION_DISABLE_SELLS', default='0') in ('1','true','True')
@@ -211,7 +213,9 @@ class TradeLoader:
             print("❌ Datei enthält keine Zeilen")
             return False
         self.trades.clear()
-        today_str = datetime.now().strftime('%Y-%m-%d')
+        today = datetime.now().date()
+        cutoff = today - pd.Timedelta(days=INCLUDE_LAST_DAYS)
+        # Normalisierte Listen für Skip-Logging
         # erlaubte Ticker Liste aus crypto_tickers laden
         try:
             from crypto_tickers import crypto_tickers as _ct_cfg
@@ -230,16 +234,36 @@ class TradeLoader:
                     pass
                 order_value = quantity * limit_price
                 pair = str(row['Ticker']).strip()
-                # Filter: Nur heutiges Datum
-                date_raw = str(row['Date']).split('T')[0].strip()
-                if date_raw != today_str:
+                # Robust Date Parse
+                date_field_raw = str(row['Date']).strip()
+                date_norm = None
+                try:
+                    # Entferne Zeit falls vorhanden
+                    core = date_field_raw.split('T')[0].strip()
+                    # Ersetze mögliche '.' durch '-'
+                    if '.' in core and core.count('.')==2:
+                        # dd.mm.yyyy -> yyyy-mm-dd
+                        parts = core.split('.')
+                        if len(parts)==3:
+                            core = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                    date_norm = pd.to_datetime(core).date()
+                except Exception:
+                    if LOG_SKIPPED_TRADES:
+                        print(f"   ⏭️ Skip Zeile {idx} (Datum unparsebar: {date_field_raw})")
+                    continue
+                if date_norm < cutoff or date_norm > today:
+                    if LOG_SKIPPED_TRADES:
+                        print(f"   ⏭️ Skip {pair} (Datum {date_norm} außerhalb Range >= {cutoff} & <= {today})")
                     continue
                 # Filter: Nur erlaubte Ticker falls Liste vorhanden
                 if allowed_pairs and pair.upper() not in allowed_pairs:
+                    if LOG_SKIPPED_TRADES:
+                        print(f"   ⏭️ Skip {pair} (nicht in erlaubten Ticker-Liste)")
                     continue
                 # Filter: Nur EUR Paare (USD versehentliche) -> skip
                 if not pair.upper().endswith('-EUR'):
-                    print(f"   ⏭️ Skip {pair} (Nicht -EUR / möglicher Fehl-Ticker)")
+                    if LOG_SKIPPED_TRADES:
+                        print(f"   ⏭️ Skip {pair} (Nicht -EUR / möglicher Fehl-Ticker)")
                     continue
                 trade = {
                     'id': idx + 1,
@@ -2018,11 +2042,19 @@ class FusionExistingAutomation:
             if not WAIT_FOR_CLICK:
                 self.review_and_submit_order(); time.sleep(0.2)
             else:
-                print('🖱️ Bitte jetzt LIMIT Order manuell prüfen & (Review/Bestätigen) klicken. Danach ENTER drücken...')
+                if PAPER_MODE:
+                    print('📝 PAPER MODE: Order nur ansehen. ENTER -> Reset (Zurücksetzen), dann nächster Trade.')
+                else:
+                    print('🖱️ REAL MODE: Prüfen & gewünschte Seite (Kaufen/Verkaufen) sichtbar lassen. ENTER -> Review (falls verfügbar).')
                 try:
                     input()
                 except KeyboardInterrupt:
                     raise
+                # Nach Bestätigung: im Paper Mode zurücksetzen, im Real Mode Review klicken
+                if PAPER_MODE:
+                    self.review_and_submit_order()  # nutzt Reset-Pfad in PAPER_MODE
+                else:
+                    self.review_and_submit_order()
         except Exception as e:
             print(f'❌ Trade {trade.get("id")} Fehler: {e}')
             self.dump_debug(f'trade_{trade.get("id")}_error')
