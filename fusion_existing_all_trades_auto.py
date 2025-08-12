@@ -58,6 +58,7 @@ PRICE_COMMIT_VERIFY = _env_flag('PRICE_COMMIT_VERIFY','FUSION_PRICE_COMMIT_VERIF
 TAB_NAV = _env_flag('TAB_NAV','FUSION_TAB_NAV','USE_TAB_NAV', default='1') in ('1','true','True')  # Verwende explizite TAB Sequenz Navigation
 USE_MAX_BUTTON = _env_flag('USE_MAX_BUTTON','FUSION_USE_MAX', default='1') in ('1','true','True')
 USE_BPS_BUTTONS = _env_flag('USE_BPS_BUTTONS','FUSION_USE_BPS', default='1') in ('1','true','True')
+PAPER_MODE = _env_flag('PAPER_MODE','FUSION_PAPER_MODE', default='0') in ('1','true','True')  # Paper: kein finaler Review Klick, Reset statt Absenden
 
 # --- Sicherheits-Flags gegen unbeabsichtigte Verkäufe ---
 DISABLE_SELLS = _env_flag('DISABLE_SELLS','FUSION_DISABLE_SELLS', default='0') in ('1','true','True')
@@ -190,7 +191,7 @@ class TradeLoader:
         self.trades = []
         self.source_file = None
     def load(self):
-        """Lädt die neueste TODAY_ONLY_trades_*.csv und baut Trade-Dicts.
+        """Lädt die neueste TODAY_ONLY_trades_*.csv, filtert nur HEUTE & erlaubte Ticker.
         Rückgabe: True bei Erfolg, sonst False."""
         self.source_file = find_latest_today_file()
         if not self.source_file:
@@ -210,6 +211,13 @@ class TradeLoader:
             print("❌ Datei enthält keine Zeilen")
             return False
         self.trades.clear()
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        # erlaubte Ticker Liste aus crypto_tickers laden
+        try:
+            from crypto_tickers import crypto_tickers as _ct_cfg
+            allowed_pairs = {k.upper() for k in _ct_cfg.keys()}
+        except Exception:
+            allowed_pairs = set()
         for idx, row in df.iterrows():
             try:
                 action = 'BUY' if str(row['Open/Close']).strip().lower() == 'open' else 'SELL'
@@ -221,10 +229,22 @@ class TradeLoader:
                 except Exception:
                     pass
                 order_value = quantity * limit_price
+                pair = str(row['Ticker']).strip()
+                # Filter: Nur heutiges Datum
+                date_raw = str(row['Date']).split('T')[0].strip()
+                if date_raw != today_str:
+                    continue
+                # Filter: Nur erlaubte Ticker falls Liste vorhanden
+                if allowed_pairs and pair.upper() not in allowed_pairs:
+                    continue
+                # Filter: Nur EUR Paare (USD versehentliche) -> skip
+                if not pair.upper().endswith('-EUR'):
+                    print(f"   ⏭️ Skip {pair} (Nicht -EUR / möglicher Fehl-Ticker)")
+                    continue
                 trade = {
                     'id': idx + 1,
-                    'pair': row['Ticker'],
-                    'crypto': str(row['Ticker']).split('-')[0],
+                    'pair': pair,
+                    'crypto': pair.split('-')[0],
                     'action': action,
                     'quantity': quantity,
                     'limit_price': limit_price,
@@ -1584,7 +1604,19 @@ class FusionExistingAutomation:
             print(f"   ⚠️ Paar NICHT gewechselt (aktuell={final_pair}) – bitte manuell prüfen")
 
     def review_and_submit_order(self):
-        # Drückt NICHT final, markiert nur Review Schritt falls verfügbar
+        if PAPER_MODE:
+            # Statt Review -> Reset / Abbrechen Button
+            selectors_reset = [
+                "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'reset')]",
+                "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'zurücksetzen')]",
+                "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'clear')]",
+                "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'abbrechen')]",
+            ]
+            clicked = self._try_click_selectors(selectors_reset, 'Reset Button (Paper)', required=False)
+            if clicked:
+                print('   🔄 Paper Mode: Order zurückgesetzt (nur Anzeige).')
+            return
+        # Real Mode: normaler Review + optional Submit
         selectors_review = [
             "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'review')]",
             "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'prüfen')]",
