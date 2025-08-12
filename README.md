@@ -386,6 +386,51 @@ Quantity = floor( (initialCapitalLong / LimitPrice) / order_round_factor ) * ord
 
 HTML Dumps werden als `fusion_debug_*.html` abgelegt.
 
+### 📋 Vollständige ENV Variable Referenz (fusion_existing_all_trades_auto.py)
+| Primär Variable | Alternative Aliase | Default | Wirkung |
+|-----------------|--------------------|---------|--------|
+| AUTO_CONTINUE | FUSION_AUTO_CONTINUE | 1 | Nächster Trade automatisch nach Wartezeit starten |
+| WAIT_BETWEEN | FUSION_WAIT, FUSION_WAIT_BETWEEN | 2.5 | Sekunden Pause zwischen Trades (nur wenn AUTO_CONTINUE=1) |
+| AUTO_SUBMIT | FUSION_AUTO_SUBMIT | 0 | Wenn 1: automatischer Submit nach Review (nicht empfohlen) |
+| USE_REALTIME_LIMIT | FUSION_REALTIME_LIMIT | 1 | Realtime Preis als Limit (falls nicht durch BPS Button überschrieben) |
+| PORTFOLIO_CHECK | FUSION_PORTFOLIO_CHECK | 1 | Portfolio Menge prüfen (begrenzen SELL) |
+| DEBUG_MODE | FUSION_DEBUG | 0 | Ausführliche Logs & zusätzliche Hinweise |
+| MAX_WAIT | FUSION_MAX_WAIT | 15 | Globale Wartezeit für Elemente (Sekunden) |
+| DEEP_INPUT_DEBUG | FUSION_DEEP_INPUT_DEBUG | 0 | Listet gefundene Input Felder (max 10) vor Befüllung |
+| MIN_INPUT_COUNT | FUSION_MIN_INPUTS | 1 | Mindestanzahl Input-Felder bevor Befüllung startet |
+| AGGRESSIVE_IFRAME_SCAN | FUSION_AGGRESSIVE_IFRAME | 1 | Intensivere iFrame Durchsuchung für Order Form |
+| SLOW_KEYSTROKES | FUSION_SLOW_KEYS | 0 | Simuliert langsame Eingabe (stabilisiert manche UIs) |
+| ORDER_FRAME_KEYWORDS | FUSION_ORDER_FRAME_KEYS | menge,amount,... | Komma-Liste Keywords zur iFrame Relevanzbewertung |
+| STRICT_FIELD_MATCH | FUSION_STRICT_FIELD_MATCH | 1 | Erzwingt getrennte Felder für Menge/Preis (wartet sonst) |
+| WAIT_FOR_CLICK | FUSION_WAIT_FOR_CLICK | 1 | Pausiert nach Befüllung auf Enter vor Review/Submit |
+| PRICE_COMMIT_VERIFY | FUSION_PRICE_COMMIT_VERIFY | 0 | Strenger Preis-Verifikations- & Re-Commit Zyklus |
+| TAB_NAV | FUSION_TAB_NAV, USE_TAB_NAV | 1 | Aktiviert TAB Sequenz Navigation (Fallback Pfad) |
+| USE_MAX_BUTTON | FUSION_USE_MAX | 1 | Aktiviert Nutzung Max Button für SELL Menge |
+| USE_BPS_BUTTONS | FUSION_USE_BPS | 1 | Aktiviert -25bps (BUY) / +25bps (SELL) Preis Buttons |
+| DISABLE_SELLS | FUSION_DISABLE_SELLS | 0 | Blockiert alle SELL Trades vollständig |
+| SELL_CONFIRM | FUSION_SELL_CONFIRM | 1 | Interaktive Bestätigung vor SELL |
+| SELL_WHITELIST | FUSION_SELL_WHITELIST | (leer) | Erlaubte SELL Paare (Kommagetrennt) |
+| MAX_SELL_FRACTION | FUSION_MAX_SELL_FRACTION | 1.0 | Anteil der gehaltenen Menge der verkauft werden darf |
+| STRICT_SELL_PRICE_PROTECT | FUSION_STRICT_SELL_PRICE_PROTECT | 0 | Preis-Schutz: max Abschlag unter Markt (z.B. 0.05) |
+| SLOW_KEYS_DELAY | FUSION_SLOW_KEYS_DELAY | 0.0 | Verzögerung je Taste wenn SLOW_KEYSTROKES aktiv (falls implementiert) |
+| DUMP_ON_ERROR | FUSION_DUMP_ON_ERROR | 1 | HTML Dump bei Fehlersituationen erzeugen |
+| USE_REALTIME_FALLBACK | FUSION_USE_REALTIME_FALLBACK | 1 | Falls Limit fehlte: Realtime Preis erneut erzwingen |
+| ENABLE_SPINBUTTON | FUSION_ENABLE_SPINBUTTON | 1 | Nutzung role=spinbutton Felder priorisieren |
+| FORCE_LIMIT | FUSION_FORCE_LIMIT | 1 | Strategie Limit aktiv erzwingen, falls UI anderes zeigt |
+| ROUND_STRICT | FUSION_ROUND_STRICT | 1 | Strikte Rundung Mengen laut ASSET_DECIMALS |
+| JS_DEEP_SCAN | FUSION_JS_DEEP_SCAN | 1 | Tiefen-Scan via JS & Shadow DOM nach Input Feldern |
+| BUTTON_RETRY | FUSION_BUTTON_RETRY | 2 | Anzahl Wiederholungen bei Button Klicks (Max/Bps) |
+| ACTIVE_TAB_RECHECK | FUSION_ACTIVE_TAB_RECHECK | 1 | Tab-Fokus vor jedem Trade verifizieren |
+
+Nur setzen, was gebraucht wird – Defaults decken Standard Flow.
+
+Beispiel Minimal Sicherer Run (nur BUY Tests):
+```powershell
+$env:DISABLE_SELLS="1"
+$env:DEBUG_MODE="1"
+python fusion_existing_all_trades_auto.py
+```
+
 ### ⚠️ Empfehlung
 Immer erst mit `DISABLE_SELLS=1` testen und danach Schutz graduell lockern.
 
