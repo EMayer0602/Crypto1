@@ -68,13 +68,37 @@ Thumbs.db
 *.swp
 *.swo
 
-# Allow Python files and specific extensions
+# Allow core source & docs only
 !*.py
 !*.md
 !*.txt
-!*.csv
-!*.html
 !*.json
 
-# But exclude secret configs
+# ---- Generated Data / Reports (exclude from VCS) ----
+# Daily price CSVs
+*-EUR_daily.csv
+# 14 day trade reports / summaries
+14_day_trades_*.csv
+bitpanda_paper_trading_*.csv
+portfolio_summary_*.csv
+CRYPTO_TAX_DATA_*.csv
+CRYPTO_TAX_REPORT_*.txt
+ACTUAL_TRADING_SUMMARY_*.txt
+
+# Fusion debug dumps
+fusion_debug_*.html
+
+# Generated charts / reports
+reports/*.html
+reports/*.csv
+
+# Trade export / automation intermediate CSVs
+*_report_*.csv
+*_trades_*.csv
+*_trades_REAL_*.csv
+
+# Do not auto-ignore config/example CSVs placed manually:
+!example_*.csv
+
+# But exclude secret configs (already above)
 config.secret.py

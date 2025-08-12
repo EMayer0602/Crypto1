@@ -307,3 +307,86 @@ Bei Fragen oder Problemen:
 **⚠️ Disclaimer:** Dieses Tool dient nur zu Bildungszwecken. Cryptocurrency-Trading birgt hohe Risiken. Investieren Sie nur Geld, das Sie sich leisten können zu verlieren.
 
 **🎯 Made with ❤️ für die Crypto-Trading-Community**
+
+---
+
+## 🔥 Bitpanda Fusion Multi-Trade Auto-Fill
+
+Automatisches Vorbefüllen von Limit BUY/SELL Orders im bereits geöffneten Bitpanda Fusion Browser-Tab. Letzter Klick (Review / Bestätigen) bleibt bewusst manuell zur finalen Kontrolle.
+
+### ✅ Features
+- Automatisches Anhängen an laufende Chrome/Edge Session (Remote Debug Port 9222)
+- Laden der neuesten `TODAY_ONLY_trades_*.csv` (Semikolon-getrennt)
+- Sequenzielles Eintragen aller Trades (Open → BUY, Close → SELL)
+- Strategie erzwingen: Limit Order
+- BUY Preis automatisch: -25bps Button (wenn vorhanden)
+- SELL Preis automatisch: +25bps Button (wenn vorhanden)
+- SELL Menge: Max Button
+- BUY Menge: Berechnung aus `initialCapitalLong / LimitPrice` unter Berücksichtigung von `order_round_factor` + Asset-spezifischer Dezimalrundung
+- Mehrstufige Feld-Erkennung (Direkte Selektoren, Heuristiken, Shadow DOM, JS Fallback)
+- Sicherheitsschutz gegen versehentliche Verkäufe (Whitelist, Confirm, Fraction, Preis-Guard)
+- Debug HTML Dumps bei Problemen
+
+### 🧪 Start
+```powershell
+python fusion_existing_all_trades_auto.py
+```
+Browser muss bereits mit eingeloggtem Bitpanda Fusion Tab laufen. Optional Chrome Start z.B.:
+```powershell
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\chrome-fusion" --profile-directory="Default"
+```
+
+### ⚙️ Wichtige Environment Variablen
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| AUTO_CONTINUE | 1 | Nächster Trade nach Wartezeit automatisch starten |
+| WAIT_BETWEEN | 2.5 | Sekunden zwischen Trades (wenn AUTO_CONTINUE=1) |
+| WAIT_FOR_CLICK | 1 | Wenn 1 → Skript pausiert vor finalem Klick (Empfohlen) |
+| USE_MAX_BUTTON | 1 | SELL: Max Button setzen für Menge |
+| USE_BPS_BUTTONS | 1 | BUY -25bps / SELL +25bps Buttons für Limitpreis |
+| DISABLE_SELLS | 0 | Alle SELLs komplett blockieren |
+| SELL_CONFIRM | 1 | Manuelle Bestätigung je SELL (y / skip) |
+| SELL_WHITELIST | (leer) | Kommagetrennte Liste erlaubter SELL Paare (z.B. BTC-EUR,ETH-EUR) |
+| MAX_SELL_FRACTION | 1.0 | Maximaler Anteil der gehaltenen Menge pro SELL (0.25 = 25%) |
+| STRICT_SELL_PRICE_PROTECT | 0 | Max. relativer Abschlag unter Marktpreis (z.B. 0.05 = 5%) |
+| DEBUG_MODE | 0 | Erweiterte Logausgaben |
+| DEEP_INPUT_DEBUG | 0 | Zusätzliche Input-Feld Auflistung |
+
+Setzen (Beispiele PowerShell):
+```powershell
+$env:SELL_CONFIRM="1"
+$env:DISABLE_SELLS="0"
+$env:SELL_WHITELIST="BTC-EUR,LINK-EUR"
+$env:MAX_SELL_FRACTION="0.5"
+$env:STRICT_SELL_PRICE_PROTECT="0.03"
+python fusion_existing_all_trades_auto.py
+```
+
+### 🔐 Sicherheitslogik SELL
+Prüf-Reihenfolge vor Ausführung:
+1. DISABLE_SELLS → Abbruch
+2. SELL_WHITELIST (falls gesetzt) → Abbruch wenn nicht enthalten
+3. MAX_SELL_FRACTION (falls Portfolio-Menge erkannt) → Abbruch wenn überschritten
+4. STRICT_SELL_PRICE_PROTECT (falls Marktpreis verfügbar) → Abbruch wenn Limit zu tief
+5. SELL_CONFIRM → Nachfrage (Abort wenn nicht bestätigt)
+
+### 🛠️ Mengenberechnung BUY
+```
+Quantity = floor( (initialCapitalLong / LimitPrice) / order_round_factor ) * order_round_factor
+→ anschließend asset-spezifische Dezimal-Kappung
+```
+
+### 🧩 Troubleshooting Fusion
+| Problem | Hinweis |
+|---------|---------|
+| Preisfeld bleibt leer | PRICE_COMMIT_VERIFY=1 aktivieren für strengere Erneuerung |
+| Buttons fehlen | UI Reload; BPS Buttons evtl. nicht sichtbar im aktuellen Modus |
+| Falsches Tab | Browser mit nur einem Fusion Tab starten / andere Tabs schließen |
+| Shadow DOM Probleme | DEBUG_MODE=1 + DEEP_INPUT_DEBUG=1 setzen und HTML Dump prüfen |
+
+HTML Dumps werden als `fusion_debug_*.html` abgelegt.
+
+### ⚠️ Empfehlung
+Immer erst mit `DISABLE_SELLS=1` testen und danach Schutz graduell lockern.
+
+---
