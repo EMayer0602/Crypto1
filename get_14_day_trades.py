@@ -39,8 +39,8 @@ def extract_trades_from_backtest_results():
     cutoff_date = datetime.now() - timedelta(days=14)
     all_trades = []
     
-    # Header wie gewünscht
-    header = "Date;Ticker;Quantity;Price;Order Type;Limit Price;Open/Close;Realtime Price Bitpanda"
+    # Header inkl. Action (BUY/SELL)
+    header = "Date;Ticker;Quantity;Price;Order Type;Limit Price;Open/Close;Action;Realtime Price Bitpanda"
     
     for ticker_name, config in crypto_tickers.items():
         symbol = config.get('symbol', ticker_name)
@@ -101,6 +101,7 @@ def extract_trades_from_backtest_results():
                         'order_type': 'Limit',
                         'limit_price': entry_price * 0.999,  # Leicht unter Entry Price
                         'open_close': 'Open',
+                        'action': 'BUY',
                         'realtime_price': current_price
                     }
                     all_trades.append(trade_entry)
@@ -119,6 +120,7 @@ def extract_trades_from_backtest_results():
                         'order_type': 'Limit',
                         'limit_price': exit_price * 1.001,  # Leicht über Exit Price
                         'open_close': 'Close',
+                        'action': 'SELL',
                         'realtime_price': current_price
                     }
                     all_trades.append(trade_exit)
@@ -138,7 +140,7 @@ def extract_trades_from_backtest_results():
     print("-" * 150)
     
     for trade in all_trades:
-        line = f"{trade['date']};{trade['ticker']};{trade['quantity']:.6f};{trade['price']:.4f};{trade['order_type']};{trade['limit_price']:.4f};{trade['open_close']};{trade['realtime_price']:.4f}"
+        line = f"{trade['date']};{trade['ticker']};{trade['quantity']:.6f};{trade['price']:.4f};{trade['order_type']};{trade['limit_price']:.4f};{trade['open_close']};{trade.get('action','')};{trade['realtime_price']:.4f}"
         print(line)
     
     # Speichere als CSV
@@ -147,7 +149,13 @@ def extract_trades_from_backtest_results():
     
     if all_trades:
         df = pd.DataFrame(all_trades)
-        df.columns = ['Date', 'Ticker', 'Quantity', 'Price', 'Order Type', 'Limit Price', 'Open/Close', 'Realtime Price Bitpanda']
+        # Spaltenreihenfolge erzwingen
+        cols = ['date','ticker','quantity','price','order_type','limit_price','open_close','action','realtime_price']
+        for c in cols:
+            if c not in df.columns:
+                df[c] = ''
+        df = df[cols]
+        df.columns = ['Date', 'Ticker', 'Quantity', 'Price', 'Order Type', 'Limit Price', 'Open/Close', 'Action', 'Realtime Price Bitpanda']
         df.to_csv(csv_filename, sep=';', index=False)
         print(f"\n💾 Report gespeichert als: {csv_filename}")
         
