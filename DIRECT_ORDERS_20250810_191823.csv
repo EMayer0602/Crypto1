@@ -1,7 +1,0 @@
-timestamp,pair,ticker,action,quantity,price,current_market_price,order_value_eur,ready_to_send,note
-2025-08-10 19:18:23,BTC-EUR,BTC,Buy,0.001,101667.964640625,101769.734375,101.769734375,True,Test-Signal - basierend auf aktuellen Preisen
-2025-08-10 19:18:23,ETH-EUR,ETH,Buy,0.01,3631.818403564453,3635.453857421875,36.35453857421875,True,Test-Signal - basierend auf aktuellen Preisen
-2025-08-10 19:18:23,XRP-EUR,XRP,Buy,1.0,2.7375043823719025,2.7402446269989014,2.7402446269989014,True,Test-Signal - basierend auf aktuellen Preisen
-2025-08-10 19:18:23,DOGE-EUR,DOGE,Buy,1.0,0.20075485235452653,0.2009558081626892,0.2009558081626892,True,Test-Signal - basierend auf aktuellen Preisen
-2025-08-10 19:18:23,SOL-EUR,SOL,Buy,1.0,156.0662049407959,156.22242736816406,156.22242736816406,True,Test-Signal - basierend auf aktuellen Preisen
-2025-08-10 19:18:23,LINK-EUR,LINK,Buy,1.0,19.226718086242677,19.24596405029297,19.24596405029297,True,Test-Signal - basierend auf aktuellen Preisen
