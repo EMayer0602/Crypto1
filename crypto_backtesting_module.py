@@ -207,87 +207,26 @@ def safe_loader(symbol, csv_path, refresh=True):
 
 # Nach den imports, vor den anderen Funktionen:
 
-def compute_equity_curve(df, trades, start_capital, long=True):
+def compute_equity_curve(df, trades, start_capital, long=True, trade_on="Close"):
     '''
-    Berechnet die Equity-Kurve exakt entlang df.index.
-    Nutzt reale Entry/Exit und täglich aktuelle Close-Preise.
-    Wenn investiert, folgt es dem Close-Preis.
+    Delegates to the Excel-validated daily equity curve with dynamic fees used in live flow.
+    Keeps signature compatibility; 'trade_on' is optional and defaults to "Close".
     '''
-    equity = []
-    cap = start_capital
-    pos = 0
-    entry_price = 0
-    trade_idx = 0
-
-    for date in df.index:
-        # Entry? - Angepasst an matched_trades Struktur
-        if trade_idx < len(trades):
-            # Unterstütze beide Strukturen: matched_trades und original trades
-            entry_key = "Entry Date" if "Entry Date" in trades[trade_idx] else ("buy_date" if long else "short_date")
-            entry_price_key = "Entry Price" if "Entry Price" in trades[trade_idx] else ("buy_price" if long else "short_price")
-            
-            try:
-                entry_date = pd.Timestamp(trades[trade_idx].get(entry_key))
-                if entry_date == date:
-                    # Shares aus matched_trades oder berechne basierend auf Capital
-                    if "Shares" in trades[trade_idx]:
-                        pos = trades[trade_idx]["Shares"]
-                    elif "shares" in trades[trade_idx]:
-                        pos = trades[trade_idx]["shares"]
-                    else:
-                        # Fallback: Berechne Shares aus Entry Price und verfügbarem Capital
-                        entry_price_val = trades[trade_idx][entry_price_key]
-                        pos = cap / entry_price_val if entry_price_val > 0 else 0
-                    
-                    entry_price = trades[trade_idx][entry_price_key]
-                    print(f"   📈 ENTRY {date.strftime('%Y-%m-%d')}: {pos:.4f} shares @ €{entry_price:.2f}")
-            except (KeyError, ValueError, TypeError):
-                pass
-
-        # Exit? - Angepasst an matched_trades Struktur (aber nicht bei offenen Trades)
-        if trade_idx < len(trades):
-            exit_key = "Exit Date" if "Exit Date" in trades[trade_idx] else ("sell_date" if long else "cover_date")
-            trade_status = trades[trade_idx].get("Status", "CLOSED")
-            
-            try:
-                exit_date = pd.Timestamp(trades[trade_idx].get(exit_key))
-                # Nur bei geschlossenen Trades als Exit behandeln
-                if exit_date == date and trade_status == "CLOSED":
-                    # PnL aus matched_trades oder berechne
-                    if "PnL" in trades[trade_idx]:
-                        pnl = trades[trade_idx]["PnL"]
-                    elif "pnl" in trades[trade_idx]:
-                        pnl = trades[trade_idx]["pnl"]
-                    else:
-                        # Fallback: Berechne PnL aus Exit Price
-                        exit_price = trades[trade_idx].get("Exit Price", df.loc[date, "Close"])
-                        pnl = pos * (exit_price - entry_price) if long else pos * (entry_price - exit_price)
-                    
-                    cap += pnl
-                    print(f"   📉 EXIT  {date.strftime('%Y-%m-%d')}: PnL €{pnl:.2f}, New Capital €{cap:.2f}")
-                    pos = 0
-                    entry_price = 0
-                    trade_idx += 1
-                elif trade_status == "OPEN" and exit_date <= date:
-                    # Bei offenen Trades: Wechsle zum nächsten Trade ohne Exit
-                    trade_idx += 1
-            except (KeyError, ValueError, TypeError):
-                pass
-
-        # Kapitalwert berechnen - FOLGT CLOSE-PREIS WENN INVESTIERT
-        if pos > 0:
-            current_price = df.loc[date, "Close"]
-            # Unrealized P&L basierend auf aktuellem Close-Preis
-            delta = (current_price - entry_price) if long else (entry_price - current_price)
-            unrealized_pnl = pos * delta
-            value = cap + unrealized_pnl
+    try:
+        # Normalize trades list (accept DataFrame or list of dicts)
+        if isinstance(trades, pd.DataFrame):
+            trades_list = trades.to_dict('records')
         else:
-            # Nicht investiert - nur Cash
-            value = cap
-
-        equity.append(value)
-
-    return equity  # ← exakt gleich lang wie df.index
+            trades_list = trades or []
+        from plotly_utils import create_equity_curve_from_matched_trades
+        equity_curve = create_equity_curve_from_matched_trades(trades_list, start_capital, df, trade_on)
+        return equity_curve
+    except Exception as _e:
+        # Fallback to constant equity to avoid hard failure
+        try:
+            return [start_capital] * (len(df) if df is not None else 0)
+        except Exception:
+            return []
 
 def debug_equity_alignment(df, equity_curve):
     '''

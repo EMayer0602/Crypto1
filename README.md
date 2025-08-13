@@ -2,6 +2,21 @@
 
 Ein robustes, produktionsreifes Python-Framework für Kryptowährungs-Backtesting, Handelsanalyse und automatisierte Berichtserstellung.
 
+## ⚡ Quick Links
+- [Daten-Update (Yahoo + Bitpanda)](#daten-update-yahoo--bitpanda)
+- [Details: README_DATA_PIPELINE.md](README_DATA_PIPELINE.md)
+
+> Start hier – Daten-Update (Yahoo + Bitpanda)
+>
+> ```powershell
+> # Minimal (smart) Update + Backtest/Report
+> python smart_csv_update.py
+> python live_backtest_WORKING.py
+>
+> # Vollständiges Update (falls nötig)
+> python get_real_crypto_data.py
+> ```
+
 ## 📊 Überblick
 
 Dieses Projekt bietet eine vollständige Pipeline für:
@@ -74,7 +89,27 @@ python get_real_crypto_data.py
 - Aktuelle Marktdaten für alle Ticker
 - Automatische CSV-Speicherung
 
-## 📁 Projekt-Struktur
+## � Daten-Update (Yahoo + Bitpanda)
+
+- Empfohlen (minimaler Update-Footprint):
+    1) Smart-Update ausführen
+         ```powershell
+         python smart_csv_update.py
+         ```
+    2) Backtest/Report starten
+         ```powershell
+         python live_backtest_WORKING.py
+         ```
+- Vollständiges Update (alle relevanten Tage neu zusammenführen):
+    ```powershell
+    python get_real_crypto_data.py
+    ```
+
+Hinweis: Die Pipeline nutzt Yahoo Finance (daily bis T-3, hourly für T-2/T-1) und Bitpanda Live-Preis für heute. CoinGecko wird im Backtest-/Update-Pfad nicht mehr verwendet.
+
+Mehr Details: siehe „README_DATA_PIPELINE.md“.
+
+## �📁 Projekt-Struktur
 
 ```
 Crypto_trading1/

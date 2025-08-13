@@ -77,6 +77,9 @@ Thumbs.db
 # ---- Generated Data / Reports (exclude from VCS) ----
 # Daily price CSVs
 *-EUR_daily.csv
+# All CSV and HTML generated files
+*.csv
+*.html
 # 14 day trade reports / summaries
 14_day_trades_*.csv
 bitpanda_paper_trading_*.csv
@@ -97,8 +100,7 @@ reports/*.csv
 *_trades_*.csv
 *_trades_REAL_*.csv
 
-# Do not auto-ignore config/example CSVs placed manually:
-!example_*.csv
+# (No CSV exceptions)
 
 # But exclude secret configs (already above)
 config.secret.py

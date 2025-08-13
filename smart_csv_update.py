@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Optimierte CSV-Update-Logik:
-- Täglich: Nur heute neu laden
-- Gestern: Nur wenn artificial value
-- Ältere Tage: Nur bei gaps
+Optimierte CSV-Update-Logik (Yahoo + Bitpanda only):
+- Heute: Bitpanda live price
+- Gestern: Falls artificial oder fehlt, aus Yahoo (1h aggregiert, Fallback 1d)
+- Ältere Tage: Nur fehlende Lücken aus Yahoo
 """
 
 import pandas as pd
 import os
 from datetime import datetime, timedelta
 from crypto_tickers import crypto_tickers
+import yfinance as yf
 
 def check_csv_needs_update(symbol):
     """
@@ -79,19 +80,46 @@ def smart_update_csv_files():
     """
     Intelligente CSV-Update-Logik:
     - Heute: Immer von Bitpanda
-    - Gestern: Nur bei artificial values von CoinGecko  
+    - Gestern: Nur bei artificial values oder fehlend, aus Yahoo  
     - Gaps: Nur fehlende Tage von Yahoo Finance
     """
     
     print("🧠 INTELLIGENTES CSV UPDATE")
     print("="*50)
     print("📅 Heute: Immer Bitpanda")
-    print("🔄 Gestern: Nur bei artificial values (CoinGecko)")
+    print("🔄 Gestern: Nur bei artificial/fehlend (Yahoo 1h→1d)")
     print("📊 Lücken: Nur fehlende Tage (Yahoo Finance)")
     print("="*50)
     
-    from get_real_crypto_data import get_bitpanda_price, get_coingecko_yesterday_price
-    import yfinance as yf
+    from get_real_crypto_data import get_bitpanda_price
+
+    def _fetch_yesterday_yahoo(symbol: str, target_date):
+        """Try to build yesterday OHLC from Yahoo hourly; fallback to 1d."""
+        try:
+            ticker = yf.Ticker(symbol)
+            hourly = ticker.history(period='5d', interval='1h')
+            if hourly is not None and not hourly.empty:
+                hourly = hourly.copy()
+                if hasattr(hourly.index, 'tz') and hourly.index.tz is not None:
+                    hourly.index = hourly.index.tz_convert(None)
+                hourly.index = pd.to_datetime(hourly.index)
+                hourly['Date'] = hourly.index.date
+                yd = hourly[hourly['Date'] == target_date]
+                if not yd.empty:
+                    o = yd['Open'].iloc[0]
+                    h = yd['High'].max()
+                    l = yd['Low'].min()
+                    c = yd['Close'].iloc[-1]
+                    v = yd['Volume'].sum()
+                    return {'Date': target_date, 'Open': float(o), 'High': float(h), 'Low': float(l), 'Close': float(c), 'Volume': float(v)}
+            # Fallback daily
+            daily = ticker.history(start=target_date, end=target_date + timedelta(days=1), interval='1d')
+            if daily is not None and not daily.empty:
+                row = daily.iloc[0]
+                return {'Date': target_date, 'Open': float(row['Open']), 'High': float(row['High']), 'Low': float(row['Low']), 'Close': float(row['Close']), 'Volume': float(row.get('Volume', 0))}
+        except Exception:
+            return None
+        return None
     
     for symbol in crypto_tickers.keys():
         print(f"\n🔄 Verarbeite {symbol}...")
@@ -140,27 +168,24 @@ def smart_update_csv_files():
             except Exception as e:
                 print(f"      ❌ Bitpanda Update Fehler: {e}")
         
-        # 2. UPDATE GESTERN (CoinGecko) - nur bei artificial
+        # 2. UPDATE GESTERN (Yahoo) - nur bei artificial/fehlend
         if yesterday_needed:
             yesterday = datetime.now().date() - timedelta(days=1)
-            print(f"   📅 Update gestern ({yesterday}) mit CoinGecko...")
+            print(f"   📅 Update gestern ({yesterday}) mit Yahoo...")
             
             try:
-                coingecko_price = get_coingecko_yesterday_price(symbol)
-                if coingecko_price:
-                    # Ersetze artificial value für gestern
-                    df.loc[df['Date'] == yesterday, 'Close'] = coingecko_price
-                    df.loc[df['Date'] == yesterday, 'Open'] = coingecko_price
-                    df.loc[df['Date'] == yesterday, 'High'] = coingecko_price
-                    df.loc[df['Date'] == yesterday, 'Low'] = coingecko_price
-                    df.loc[df['Date'] == yesterday, 'Volume'] = 2000000  # Marker für CoinGecko
-                    
+                yrow = _fetch_yesterday_yahoo(symbol, yesterday)
+                if yrow:
+                    # Ersetze/füge echten Yahoo-Wert für gestern
+                    df = df[df['Date'] != yesterday]
+                    new_row = pd.DataFrame([yrow])
+                    df = pd.concat([df, new_row], ignore_index=True)
                     updates_made = True
-                    print(f"      ✅ Gestern: €{coingecko_price:.2f} (CoinGecko ersetzt artificial)")
+                    print(f"      ✅ Gestern: €{yrow['Close']:.2f} (Yahoo)")
                 else:
-                    print(f"      ❌ CoinGecko Fehler für {symbol}")
+                    print(f"      ❌ Keine Yahoo-Daten für gestern")
             except Exception as e:
-                print(f"      ❌ CoinGecko Update Fehler: {e}")
+                print(f"      ❌ Yahoo Update Fehler: {e}")
         
         # 3. FÜLLE GAPS (Yahoo Finance) - nur fehlende Tage
         if gaps_needed:
