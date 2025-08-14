@@ -24,15 +24,39 @@ def display_extended_trades_table(ext_signals, symbol):
     print(f"{'#':<3} {'Date HL':<12} {'Level HL':<10} {'Type':<11} {action_col:<8} {'Close Level':<12} {'Detect Date':<12} {'Trade Day'}")
     print("-" * 140)
     
+    def _to_float(val, default=0.0):
+        try:
+            import numpy as _np  # local import to avoid top-level dependency changes
+        except Exception:
+            _np = None
+        # Extract scalar from common container types
+        try:
+            if isinstance(val, pd.Series):
+                if not val.empty:
+                    return float(val.iloc[0])
+                return float(default)
+            if _np is not None and isinstance(val, _np.ndarray):
+                return float(val.flatten()[0]) if val.size > 0 else float(default)
+            if isinstance(val, (list, tuple)):
+                return float(val[0]) if len(val) > 0 else float(default)
+            # Try direct conversion
+            return float(val)
+        except Exception:
+            return float(default)
+
     for i, row in ext_signals.iterrows():
         action = row.get(action_col, "None")
-        print(f"{i+1:<3} {str(row.get('Date high/low', 'N/A')):<12} "
-              f"{row.get('Level high/low', 0.0):<10.4f} "
-              f"{row.get('Supp/Resist', 'N/A'):<11} "
-              f"{action:<8} "
-              f"{row.get('Level Close', 0.0):<12.4f} "
-              f"{str(row.get('Long Date detected', 'N/A')):<12} "
-              f"{str(row.get('Long Trade Day', 'N/A'))}")
+        level_hl = _to_float(row.get('Level high/low', 0.0))
+        level_close = _to_float(row.get('Level Close', 0.0))
+        print(
+            f"{i+1:<3} {str(row.get('Date high/low', 'N/A')):<12} "
+            f"{level_hl:<10.4f} "
+            f"{row.get('Supp/Resist', 'N/A'):<11} "
+            f"{action:<8} "
+            f"{level_close:<12.4f} "
+            f"{str(row.get('Long Date detected', 'N/A')):<12} "
+            f"{str(row.get('Long Trade Day', 'N/A'))}"
+        )
     
     print("=" * 140)
     
@@ -457,13 +481,38 @@ def plotly_combined_chart_and_equity(
         if standard_signals is not None and len(standard_signals) > 0:
             try:
                 print(f"   🔍 Processing {len(standard_signals)} extended signals...")
+                # Support both 'Long Action' (live) and 'Action' (legacy); normalize to lowercase
+                action_col = "Long Action" if "Long Action" in standard_signals.columns else ("Action" if "Action" in standard_signals.columns else None)
+                if action_col is None:
+                    raise ValueError("Neither 'Long Action' nor 'Action' column present in extended signals")
+                ss = standard_signals.copy()
+                # Normalize action values
+                try:
+                    ss[action_col] = ss[action_col].astype(str).str.lower()
+                except Exception:
+                    pass
                 
+                # Resolve date column used by extended signals
+                date_col = 'Long Date detected'
+                if date_col not in ss.columns:
+                    if 'Date detected' in ss.columns:
+                        date_col = 'Date detected'
+                    elif 'Date' in ss.columns:
+                        date_col = 'Date'
+                # Ensure numeric price columns for plotting offsets
+                for c in ['Level Close', 'Level high/low']:
+                    if c in ss.columns:
+                        try:
+                            ss[c] = pd.to_numeric(ss[c], errors='coerce')
+                        except Exception:
+                            pass
+
                 # BUY Actions (Blaue Dreiecke)
-                buy_signals = standard_signals[standard_signals['Action'] == 'buy']
+                buy_signals = ss[ss[action_col] == 'buy']
                 if not buy_signals.empty:
                     fig.add_trace(
                         go.Scatter(
-                            x=pd.to_datetime(buy_signals['Long Date detected']),
+                            x=pd.to_datetime(buy_signals[date_col]),
                             y=buy_signals['Level Close'] * 0.95,  # 5% below price
                             mode="markers",
                             name="🔵 BUY Trade",
@@ -482,11 +531,11 @@ def plotly_combined_chart_and_equity(
                     buy_markers_added = len(buy_signals)
                 
                 # SELL Actions (Orange Dreiecke)
-                sell_signals = standard_signals[standard_signals['Action'] == 'sell']
+                sell_signals = ss[ss[action_col] == 'sell']
                 if not sell_signals.empty:
                     fig.add_trace(
                         go.Scatter(
-                            x=pd.to_datetime(sell_signals['Long Date detected']),
+                            x=pd.to_datetime(sell_signals[date_col]),
                             y=sell_signals['Level Close'] * 1.05,  # 5% above price
                             mode="markers",
                             name="🟠 SELL Trade",
@@ -510,20 +559,20 @@ def plotly_combined_chart_and_equity(
                 if buy_markers_added > 0 and sell_markers_added > 0:
                     try:
                         # Sortiere alle Trades chronologisch
-                        all_trades = standard_signals[standard_signals['Action'].isin(['buy', 'sell'])].copy()
-                        all_trades = all_trades.sort_values('Long Date detected')
+                        all_trades = ss[ss[action_col].isin(['buy', 'sell'])].copy()
+                        all_trades = all_trades.sort_values(date_col)
                         
                         # Verbinde aufeinanderfolgende BUY-SELL Paare
                         trade_lines = []
                         current_buy = None
                         
                         for idx, trade in all_trades.iterrows():
-                            if trade['Action'] == 'buy' and current_buy is None:
+                            if trade[action_col] == 'buy' and current_buy is None:
                                 current_buy = trade
-                            elif trade['Action'] == 'sell' and current_buy is not None:
+                            elif trade[action_col] == 'sell' and current_buy is not None:
                                 # Verbindungslinie von BUY zu SELL
-                                buy_date = pd.to_datetime(current_buy['Long Date detected'])
-                                sell_date = pd.to_datetime(trade['Long Date detected'])
+                                buy_date = pd.to_datetime(current_buy[date_col])
+                                sell_date = pd.to_datetime(trade[date_col])
                                 buy_price = current_buy['Level Close']
                                 sell_price = trade['Level Close']
                                 

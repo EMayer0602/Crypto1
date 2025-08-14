@@ -20,7 +20,7 @@ from signal_utils import (
     update_level_close_long,
     simulate_trades_compound_extended,
     berechne_best_p_tw_long,
-    plot_combined_chart_and_equity
+    # plot_combined_chart_and_equity  # ❌ Deprecated: use Plotly version from plotly_utils.py
 )
 # Am Anfang der Datei bei den anderen Imports hinzufügen:
 from trades_weekly_display import display_weekly_trades_console, create_weekly_trades_html
@@ -208,10 +208,11 @@ def safe_loader(symbol, csv_path, refresh=True):
 # Nach den imports, vor den anderen Funktionen:
 
 def compute_equity_curve(df, trades, start_capital, long=True, trade_on="Close"):
-    '''
-    Delegates to the Excel-validated daily equity curve with dynamic fees used in live flow.
-    Keeps signature compatibility; 'trade_on' is optional and defaults to "Close".
-    '''
+    """
+    DO NOT CHANGE WITHOUT EXPLICIT USER APPROVAL.
+    Delegates to the live (Excel-validated) equity curve used in charts:
+    plotly_utils.create_equity_curve_from_matched_trades
+    """
     try:
         # Normalize trades list (accept DataFrame or list of dicts)
         if isinstance(trades, pd.DataFrame):
@@ -221,7 +222,7 @@ def compute_equity_curve(df, trades, start_capital, long=True, trade_on="Close")
         from plotly_utils import create_equity_curve_from_matched_trades
         equity_curve = create_equity_curve_from_matched_trades(trades_list, start_capital, df, trade_on)
         return equity_curve
-    except Exception as _e:
+    except Exception:
         # Fallback to constant equity to avoid hard failure
         try:
             return [start_capital] * (len(df) if df is not None else 0)
@@ -434,8 +435,17 @@ def main_backtest_with_analysis():
                 df['sell_signal'] = 0
                 
                 if not ext_signals.empty:
+                    # Detect action column used by extended signals
+                    action_col = 'Long Action' if 'Long Action' in ext_signals.columns else ('Action' if 'Action' in ext_signals.columns else None)
                     # Buy signals
-                    buy_signals = ext_signals[ext_signals['Action'] == 'buy']
+                    if action_col is not None:
+                        try:
+                            norm_action = ext_signals[action_col].astype(str).str.lower()
+                            buy_signals = ext_signals[norm_action == 'buy']
+                        except Exception:
+                            buy_signals = pd.DataFrame()
+                    else:
+                        buy_signals = pd.DataFrame()
                     for _, row in buy_signals.iterrows():
                         try:
                             trade_date = pd.to_datetime(row['Long Date detected'])
@@ -445,7 +455,14 @@ def main_backtest_with_analysis():
                             continue
                     
                     # Sell signals
-                    sell_signals = ext_signals[ext_signals['Action'] == 'sell']
+                    if action_col is not None:
+                        try:
+                            norm_action = ext_signals[action_col].astype(str).str.lower()
+                            sell_signals = ext_signals[norm_action == 'sell']
+                        except Exception:
+                            sell_signals = pd.DataFrame()
+                    else:
+                        sell_signals = pd.DataFrame()
                     for _, row in sell_signals.iterrows():
                         try:
                             trade_date = pd.to_datetime(row['Long Date detected'])
@@ -467,21 +484,26 @@ def main_backtest_with_analysis():
                 if not matched_trades.empty:
                     print(f"   💼 Computing strategy equity curve from {len(matched_trades)} trades...")
                     
-                    # Convert matched_trades DataFrame to list of dicts
+                    # Map matched_trades to expected keys for create_equity_curve_from_matched_trades
                     trades_list = []
                     for _, trade in matched_trades.iterrows():
-                        trade_dict = trade.to_dict()
+                        trade_dict = {
+                            'buy_date': trade.get('Entry Date'),
+                            'sell_date': trade.get('Exit Date'),
+                            'buy_price': trade.get('Entry Price'),
+                            'sell_price': trade.get('Exit Price'),
+                            'shares': trade.get('Quantity', trade.get('Shares')),
+                            'pnl': trade.get('Net PnL', trade.get('PnL')),
+                            'is_open': str(trade.get('Status', '')).upper() == 'OPEN'
+                        }
                         trades_list.append(trade_dict)
                     
-                    # Debug erste paar Trades
-                    print(f"   🔍 First trade example:")
-                    if len(trades_list) > 0:
-                        first_trade = trades_list[0]
-                        for key, value in first_trade.items():
-                            if key in ['Entry Date', 'Exit Date', 'Entry Price', 'Exit Price', 'Shares', 'PnL']:
-                                print(f"     {key}: {value}")
+                    # Debug first trade mapping
+                    if trades_list:
+                        ft = trades_list[0]
+                        print(f"   🔍 First mapped trade: buy_date={ft['buy_date']}, sell_date={ft['sell_date']}, shares={ft['shares']}")
                     
-                    # Berechne Strategy Equity Curve mit NEUER TÄGLICHER Funktion - ✅ INCLUDE TRADE_ON
+                    # Compute Strategy Equity Curve with daily function and correct trade_on
                     equity_curve = create_equity_curve_from_matched_trades(trades_list, initial_capital, df, trade_on)
                     
                     # Debug equity alignment (TEMPORARILY DISABLED)
@@ -1341,18 +1363,40 @@ def backtest_single_ticker(cfg, symbol):
     # Buy & Hold-Kurve
     bh_curve_bt = [cfg.get("initialCapitalLong", 10000) * (p / df_bt["Close"].iloc[0]) for p in df_bt["Close"]]
 
-    # Plot
-    plot_combined_chart_and_equity(
-        df_bt,
-        std_bt,
-        supp_bt,
-        res_bt,
-        trades_bt,
-        bh_curve_bt,
-        symbol,
-        initial_capital=cfg.get("initialCapitalLong", 10000),
-        backtest_years=backtest_years
-    )
+    # Plot (use Plotly charts aligned with live_backtest_WORKING.py)
+    try:
+        # Build strategy equity curve from trades using the VALIDATED function
+        from plotly_utils import create_equity_curve_from_matched_trades, plotly_combined_chart_and_equity
+
+        initial_capital_bt = cfg.get("initialCapitalLong", 10000)
+
+        # Normalize trades_bt to list[dict] if it's a DataFrame-like
+        if isinstance(trades_bt, pd.DataFrame):
+            trades_list_bt = trades_bt.to_dict('records')
+        else:
+            trades_list_bt = trades_bt or []
+
+        equity_curve_bt = create_equity_curve_from_matched_trades(
+            trades_list_bt,
+            initial_capital_bt,
+            df_bt,
+            trade_on
+        )
+
+        # Call the unified Plotly chart function
+        plotly_combined_chart_and_equity(
+            df=df_bt,
+            standard_signals=ext_bt,   # extended signals with real trade actions
+            support=supp_bt,
+            resistance=res_bt,
+            equity_curve=equity_curve_bt,
+            buyhold_curve=bh_curve_bt,
+            ticker=symbol,
+            backtest_years=backtest_years,
+            initial_capital=initial_capital_bt
+        )
+    except Exception as e:
+        print(f"⚠️ Plotly chart generation failed for {symbol}: {e}")
 
     return cap_bt, trades_bt, std_bt, supp_bt, res_bt, bh_curve_bt
 
@@ -1870,6 +1914,30 @@ def run_backtest(symbol, config):
         if ext_full is None or ext_full.empty:
             print(f"❌ Keine Extended Signals für {symbol}")
             return False
+
+        # 🔧 NORMALIZE EXTENDED SIGNALS COLUMNS TO MATCH LIVE RUNNER
+        try:
+            ef = ext_full.copy()
+            # Prefer 'Long Action'; create it from 'Action' if missing
+            if 'Long Action' not in ef.columns and 'Action' in ef.columns:
+                ef['Long Action'] = ef['Action']
+            # Prefer 'Long Date detected'; create fallback from common date columns
+            if 'Long Date detected' not in ef.columns:
+                if 'Date detected' in ef.columns:
+                    ef['Long Date detected'] = ef['Date detected']
+                elif 'Date' in ef.columns:
+                    ef['Long Date detected'] = ef['Date']
+            # Coerce numeric level fields used for plotting
+            for c in ['Level Close', 'Level high/low']:
+                if c in ef.columns:
+                    try:
+                        ef[c] = pd.to_numeric(ef[c], errors='coerce')
+                    except Exception:
+                        pass
+            ext_full = ef
+            print("🔧 Normalized extended signal columns for live compatibility")
+        except Exception as _norm_err:
+            print(f"⚠️ Could not normalize extended signals: {_norm_err}")
         
         # 3. EXTENDED TRADES - KOMPLETTE TABELLE
         print(f"\n📊 3. EXTENDED TRADES - KOMPLETTE TABELLE ({len(ext_full)} Trades) - {symbol}")
@@ -2367,6 +2435,21 @@ if __name__ == "__main__":
     print(f"📊 Configuration:")
     print(f"   Backtest Period: {backtest_years} Jahr(e)")
     print(f"   Commission Rate: {COMMISSION_RATE*100}%")
+    # CSV refresh to mirror live runner behavior
+    try:
+        from smart_csv_update import smart_update_csv_files
+        print("\n🧠 Intelligent CSV update (only necessary data)...")
+        smart_update_csv_files()
+        print("✅ Smart CSV update completed!")
+    except Exception as e:
+        print(f"❌ Smart CSV update failed, falling back to full update: {e}")
+        try:
+            from get_real_crypto_data import update_csv_files_with_realtime_data
+            print("🔄 Fallback: Full CSV update...")
+            update_csv_files_with_realtime_data()
+            print("✅ Fallback CSV update completed!")
+        except Exception as e2:
+            print(f"❌ Both update methods failed: {e2}")
     
     # Crypto Tickers anzeigen
     print(f"\n💰 CRYPTO TICKERS CONFIGURED ({len(crypto_tickers)}):")

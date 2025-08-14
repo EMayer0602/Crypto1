@@ -59,8 +59,31 @@ TAB_NAV = _env_flag('TAB_NAV','FUSION_TAB_NAV','USE_TAB_NAV', default='1') in ('
 USE_MAX_BUTTON = _env_flag('USE_MAX_BUTTON','FUSION_USE_MAX', default='1') in ('1','true','True')
 USE_BPS_BUTTONS = _env_flag('USE_BPS_BUTTONS','FUSION_USE_BPS', default='1') in ('1','true','True')
 PAPER_MODE = _env_flag('PAPER_MODE','FUSION_PAPER_MODE', default='0') in ('1','true','True')  # Paper: kein finaler Review Klick, Reset statt Absenden
+SAFE_PREVIEW_MODE = _env_flag('SAFE_PREVIEW_MODE','FUSION_SAFE_PREVIEW_MODE', default='0') in ('1','true','True')  # Nur anzeigen, niemals Review klicken
+# Zusatzschutz: Bei SELL muss ein Bestätigungstext eingegeben werden (standard aktiv)
+FORCE_SELL_TYPING = _env_flag('FORCE_SELL_TYPING','FUSION_FORCE_SELL_TYPING', default='1') in ('1','true','True')
 INCLUDE_LAST_DAYS = int(_env_flag('INCLUDE_LAST_DAYS','FUSION_INCLUDE_LAST_DAYS', default='0'))  # 0 = nur heute, 1 = heute + gestern, ...
 LOG_SKIPPED_TRADES = _env_flag('LOG_SKIPPED_TRADES','FUSION_LOG_SKIPPED_TRADES', default='0') in ('1','true','True')
+TRADES_FILE = _env_flag('TRADES_FILE','FUSION_TRADES_FILE', default='').strip()  # explizit bestimmte Datei statt auto newest
+DUMP_FILTER_DEBUG = _env_flag('DUMP_FILTER_DEBUG','FUSION_DUMP_FILTER_DEBUG', default='0') in ('1','true','True')
+if INCLUDE_LAST_DAYS != 0:
+    # Strikte Vorgabe: nur aktueller Tag erlaubt
+    print("ℹ️ INCLUDE_LAST_DAYS überschrieben auf 0 (Policy: nur heutiger Tag)")
+    INCLUDE_LAST_DAYS = 0
+BACKTEST_MODE = _env_flag('BACKTEST_MODE','FUSION_BACKTEST_MODE','FUSION_MODE', default='0').lower() in ('1','true','backtest')
+
+# ---- Benutzer-Schnell-Overrides (einfach True/False setzen, None = ignorieren) ----
+USER_OVERRIDES = {
+    # 'AUTO_CONTINUE': False,
+    # 'WAIT_FOR_CLICK': True,
+    # 'SAFE_PREVIEW_MODE': True,   # Aktivieren um JEDE Order nur vorzufüllen
+    # 'PAPER_MODE': True,          # Verhindert versehentliche Live-Aktionen
+    # 'DISABLE_SELLS': True,       # Komplett alle SELLs blockieren
+}
+for k,v in list(USER_OVERRIDES.items()):
+    if v is None: continue
+    if k in globals():
+        globals()[k] = v
 
 # --- Sicherheits-Flags gegen unbeabsichtigte Verkäufe ---
 DISABLE_SELLS = _env_flag('DISABLE_SELLS','FUSION_DISABLE_SELLS', default='0') in ('1','true','True')
@@ -68,6 +91,7 @@ SELL_CONFIRM = _env_flag('SELL_CONFIRM','FUSION_SELL_CONFIRM', default='1') in (
 SELL_WHITELIST = set([s.strip().upper() for s in _env_flag('SELL_WHITELIST','FUSION_SELL_WHITELIST', default='').split(',') if s.strip()])  # leere => kein Filter
 MAX_SELL_FRACTION = float(_env_flag('MAX_SELL_FRACTION','FUSION_MAX_SELL_FRACTION', default='1.0'))  # 1.0 = alles erlaubt
 STRICT_SELL_PRICE_PROTECT = float(_env_flag('STRICT_SELL_PRICE_PROTECT','FUSION_STRICT_SELL_PRICE_PROTECT', default='0'))  # z.B. 0.05 => Preis max 5% unter Markt
+STRICT_EUR_ONLY = _env_flag('STRICT_EUR_ONLY','FUSION_STRICT_EUR_ONLY', default='1') in ('1','true','True')  # Erzwinge ausschließlich *-EUR Paare
 
 # Asset Rundungsregeln (kann bei Bedarf erweitert werden)
 ASSET_DECIMALS = {
@@ -138,9 +162,12 @@ def round_asset_amount(symbol: str, amount: float) -> float:
     except Exception:
         return float(amount)
 
-# Neu: Datei-Suche (wurde durch Patch entfernt)
+# Datei-Suche: ausschließlich TODAY_ONLY Dateien (saubere Vorgabe)
 def find_latest_today_file(prefix: str = "TODAY_ONLY_trades_"):
     files = glob.glob(f"{prefix}*.csv")
+    if not files:
+        # alternative einfache Namen zulassen
+        files = glob.glob("TODAY_ONLY*.csv")
     if not files:
         return None
     def extract_ts(fn):
@@ -150,7 +177,7 @@ def find_latest_today_file(prefix: str = "TODAY_ONLY_trades_"):
                 return datetime.strptime(m.group(1), "%Y%m%d_%H%M%S")
             except Exception:
                 return datetime.min
-        return datetime.min
+        return datetime.fromtimestamp(os.path.getmtime(fn))
     files.sort(key=extract_ts, reverse=True)
     return files[0]
 
@@ -195,7 +222,9 @@ class TradeLoader:
     def load(self):
         """Lädt die neueste TODAY_ONLY_trades_*.csv, filtert nur HEUTE & erlaubte Ticker.
         Rückgabe: True bei Erfolg, sonst False."""
-        self.source_file = find_latest_today_file()
+        self.source_file = TRADES_FILE if TRADES_FILE else find_latest_today_file()
+        if TRADES_FILE and self.source_file and not os.path.basename(self.source_file).upper().startswith('TODAY_ONLY'):
+            print(f"⚠️ Angegebene Datei '{self.source_file}' ist keine TODAY_ONLY_* Datei – nur heutige Zeilen werden trotzdem gefiltert.")
         if not self.source_file:
             print("❌ Keine TODAY_ONLY_trades_*.csv Datei gefunden")
             return False
@@ -212,6 +241,12 @@ class TradeLoader:
         if df.empty:
             print("❌ Datei enthält keine Zeilen")
             return False
+        if DUMP_FILTER_DEBUG:
+            print(f"ℹ️ Spalten: {list(df.columns)} | Zeilen: {len(df)}")
+            try:
+                print(df.head(3))
+            except Exception:
+                pass
         self.trades.clear()
         today = datetime.now().date()
         cutoff = today - pd.Timedelta(days=INCLUDE_LAST_DAYS)
@@ -222,6 +257,15 @@ class TradeLoader:
             allowed_pairs = {k.upper() for k in _ct_cfg.keys()}
         except Exception:
             allowed_pairs = set()
+        if DUMP_FILTER_DEBUG:
+            print(f"ℹ️ Erlaubte Ticker (importiert): {sorted(list(allowed_pairs))[:20]}{' ...' if len(allowed_pairs)>20 else ''}")
+        skip_stats = {
+            'date_range':0,
+            'date_unparseable':0,
+            'not_allowed':0,
+            'not_eur':0,
+            'other':0
+        }
         for idx, row in df.iterrows():
             try:
                 action = 'BUY' if str(row['Open/Close']).strip().lower() == 'open' else 'SELL'
@@ -234,6 +278,14 @@ class TradeLoader:
                     pass
                 order_value = quantity * limit_price
                 pair = str(row['Ticker']).strip()
+                # Normalisierung: Unterstriche -> Bindestrich
+                pair = pair.replace('_','-')
+                # Früher Skip wenn kein EUR oder USD enthalten
+                if STRICT_EUR_ONLY and ('USD' in pair.upper()):
+                    skip_stats['not_eur'] += 1
+                    if LOG_SKIPPED_TRADES or DUMP_FILTER_DEBUG:
+                        print(f"   ⏭️ Skip {pair} (USD erkannt – STRICT_EUR_ONLY aktiv) -> {row.to_dict()}")
+                    continue
                 # Robust Date Parse
                 date_field_raw = str(row['Date']).strip()
                 date_norm = None
@@ -248,22 +300,28 @@ class TradeLoader:
                             core = f"{parts[2]}-{parts[1]}-{parts[0]}"
                     date_norm = pd.to_datetime(core).date()
                 except Exception:
-                    if LOG_SKIPPED_TRADES:
-                        print(f"   ⏭️ Skip Zeile {idx} (Datum unparsebar: {date_field_raw})")
+                    skip_stats['date_unparseable'] += 1
+                    if LOG_SKIPPED_TRADES or DUMP_FILTER_DEBUG:
+                        print(f"   ⏭️ Skip Zeile {idx} (Datum unparsebar: {date_field_raw}) -> {row.to_dict()}")
                     continue
-                if date_norm < cutoff or date_norm > today:
-                    if LOG_SKIPPED_TRADES:
-                        print(f"   ⏭️ Skip {pair} (Datum {date_norm} außerhalb Range >= {cutoff} & <= {today})")
-                    continue
+                if not BACKTEST_MODE:
+                    # Strikter heutiger Tag
+                    if date_norm != today:
+                        skip_stats['date_range'] += 1
+                        if LOG_SKIPPED_TRADES or DUMP_FILTER_DEBUG:
+                            print(f"   ⏭️ Skip {pair} (Datum {date_norm} != heute {today}) -> {row.to_dict()}")
+                        continue
                 # Filter: Nur erlaubte Ticker falls Liste vorhanden
                 if allowed_pairs and pair.upper() not in allowed_pairs:
-                    if LOG_SKIPPED_TRADES:
-                        print(f"   ⏭️ Skip {pair} (nicht in erlaubten Ticker-Liste)")
+                    skip_stats['not_allowed'] += 1
+                    if LOG_SKIPPED_TRADES or DUMP_FILTER_DEBUG:
+                        print(f"   ⏭️ Skip {pair} (nicht in erlaubten Ticker-Liste) -> {row.to_dict()}")
                     continue
                 # Filter: Nur EUR Paare (USD versehentliche) -> skip
                 if not pair.upper().endswith('-EUR'):
-                    if LOG_SKIPPED_TRADES:
-                        print(f"   ⏭️ Skip {pair} (Nicht -EUR / möglicher Fehl-Ticker)")
+                    skip_stats['not_eur'] += 1
+                    if LOG_SKIPPED_TRADES or DUMP_FILTER_DEBUG:
+                        print(f"   ⏭️ Skip {pair} (Nicht -EUR / möglicher Fehl-Ticker) -> {row.to_dict()}")
                     continue
                 trade = {
                     'id': idx + 1,
@@ -274,15 +332,24 @@ class TradeLoader:
                     'limit_price': limit_price,
                     'realtime_price': realtime_price,
                     'order_value': order_value,
+                    'date': date_norm,
                     'raw': row.to_dict()
                 }
                 self.trades.append(trade)
             except Exception as e:
+                skip_stats['other'] += 1
                 print(f"⚠️ Zeile {idx} übersprungen: {e}")
         if not self.trades:
             print("❌ Keine gültigen Trades extrahiert")
+            if DUMP_FILTER_DEBUG:
+                print(f"📊 Skip-Statistik: {skip_stats}")
             return False
-        print(f"✅ {len(self.trades)} Trades geladen (Open => BUY, Close => SELL)")
+        if DUMP_FILTER_DEBUG:
+            print(f"📊 Skip-Statistik: {skip_stats}")
+        if BACKTEST_MODE:
+            print(f"✅ {len(self.trades)} Backtest-Trades geladen (alle Daten, Datumsfilter deaktiviert)")
+        else:
+            print(f"✅ {len(self.trades)} Trades (nur heute) geladen (Open => BUY, Close => SELL)")
         total_buy = sum(t['order_value'] for t in self.trades if t['action']=='BUY')
         total_sell = sum(t['order_value'] for t in self.trades if t['action']=='SELL')
         print(f"   🟢 BUY Gesamt:  €{total_buy:,.2f}".replace(',', ' '))
@@ -295,9 +362,11 @@ class TradeLoader:
 # ---------------------------------------------------------------------------
 class FusionExistingAutomation:
     def __init__(self, auto_continue=True, wait_between=2.5, auto_submit=False):
+        # Laufsteuerung
         self.auto_continue = auto_continue
         self.wait_between = wait_between
         self.auto_submit = auto_submit
+        # Selenium / Zustand
         self.driver = None
         self.attached = False
         self.cached_holdings = {}  # symbol -> available qty
@@ -305,6 +374,9 @@ class FusionExistingAutomation:
         self._last_pair = None
         self._last_qty_element = None
         self._last_price_element = None
+        # Safe Preview Steuerflags
+        self.abort_all = False   # q -> sofortiger Gesamtabbruch
+        self.skip_rest = False   # s -> keine weiteren Trades mehr
 
     def attach_or_start_debug_chrome(self):
         from selenium import webdriver
@@ -1641,6 +1713,20 @@ class FusionExistingAutomation:
                 print('   🔄 Paper Mode: Order zurückgesetzt (nur Anzeige).')
             return
         # Real Mode: normaler Review + optional Submit
+        # SELL Doppelschutz: Nur wenn keine manuellen Klick-Wartezeiten aktiv sind
+        if FORCE_SELL_TYPING and not WAIT_FOR_CLICK and not SAFE_PREVIEW_MODE:
+            try:
+                # Prüfen ob SELL Seite aktiv ist
+                if self._is_side_active('SELL'):
+                    confirm = input("❗ Sicherheitsabfrage SELL: tippe exakt 'SELL' um Review zu ermöglichen (ENTER = Abbruch): ").strip().upper()
+                    if confirm != 'SELL':
+                        print('🛑 SELL Review abgebrochen (Tipptest fehlgeschlagen)')
+                        return
+            except KeyboardInterrupt:
+                raise
+            except Exception:
+                print('⚠️ Eingabeproblem – SELL Sicherheit greift, Abbruch dieser Order')
+                return
         selectors_review = [
             "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'review')]",
             "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'prüfen')]",
@@ -2038,6 +2124,33 @@ class FusionExistingAutomation:
                 if DEBUG_MODE:
                     print('   ⚠️ apply_max_and_bps_buttons Fehler')
             self.fill_quantity_and_price(trade); time.sleep(0.25)
+            # Laufzeit-Validierung: aktuelles UI Paar MUSS gewünschtes EUR Paar sein
+            try:
+                ui_pair = (self.get_current_pair() or '').upper()
+                intended = trade['pair'].upper()
+                if STRICT_EUR_ONLY and (not ui_pair.endswith('-EUR') or ui_pair != intended):
+                    print(f"🛑 ABBRUCH: UI Paar '{ui_pair}' != beabsichtigt '{intended}' oder nicht -EUR. Trade übersprungen.")
+                    return
+            except Exception:
+                pass
+            # SAFE PREVIEW: Order NICHT weiter klicken, Benutzer fragt Entscheidung ab
+            if SAFE_PREVIEW_MODE:
+                print('\n🔐 SAFE PREVIEW AKTIV – Order nur vorausgefüllt.')
+                print('   ENTER = nächste Order | c = diesen verwerfen | s = Rest überspringen | q = alles abbrechen')
+                try:
+                    choice = input('   Eingabe: ').strip().lower()
+                except KeyboardInterrupt:
+                    choice = 'q'
+                if choice == 'q':
+                    self.abort_all = True
+                    print('🛑 Abbruch aller weiteren Trades.'); return
+                if choice == 's':
+                    self.skip_rest = True
+                    print('⏹️ Restliche Trades werden nicht mehr gezeigt.'); return
+                if choice == 'c':
+                    print('♻️ Verworfen – UI bitte selbst zurücksetzen falls nötig.'); return
+                # ENTER -> einfach weiter ohne Review/Reset
+                return
             # Optional NICHT automatisch Review klicken – Nutzer soll manuell klicken
             if not WAIT_FOR_CLICK:
                 self.review_and_submit_order(); time.sleep(0.2)
@@ -2062,8 +2175,14 @@ class FusionExistingAutomation:
     def run_trader(self, trades):
         print(f"🚀 Starte Auto-Trader für {len(trades)} Trades (auto_submit={'ON' if self.auto_submit else 'OFF'})")
         for idx, trade in enumerate(trades):
+            if self.abort_all:
+                print('\n🛑 Verarbeitung zuvor abgebrochen (abort_all).'); break
+            if self.skip_rest:
+                print('\n⏹️ Weitere Trades übersprungen (skip_rest aktiv).'); break
             print(f"\n🔄 Verarbeite Trade {idx+1}/{len(trades)}: {trade['action']} {trade['quantity']:.6f} {trade['pair']} @ {trade['limit_price']}")
             self.process_trade(trade)
+            if self.abort_all or self.skip_rest:
+                break
             if self.auto_continue and idx < len(trades) - 1:
                 print("⏩ Weiter in" , f"{self.wait_between:.1f}s ...")
                 time.sleep(self.wait_between)
@@ -2076,7 +2195,7 @@ class FusionExistingAutomation:
 # ---------------------------------------------------------------------------
 def main():
     print('🔧 Starte Fusion Existing Browser Multi-Trade Auto-Fill (verbesserte Version)')
-    print(f'⚙️ auto_continue={AUTO_CONTINUE} wait={WAIT_BETWEEN}s realtime_limit={USE_REALTIME_LIMIT} portfolio={PORTFOLIO_CHECK} debug={DEBUG_MODE} wait_for_click={WAIT_FOR_CLICK}')
+    print(f'⚙️ auto_continue={AUTO_CONTINUE} wait={WAIT_BETWEEN}s realtime_limit={USE_REALTIME_LIMIT} portfolio={PORTFOLIO_CHECK} debug={DEBUG_MODE} wait_for_click={WAIT_FOR_CLICK} safe_preview={SAFE_PREVIEW_MODE} force_sell_typing={FORCE_SELL_TYPING} paper={PAPER_MODE}')
     if not ensure_selenium():
         print('❌ Selenium fehlt. Abbruch.'); return
     loader = TradeLoader()
