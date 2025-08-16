@@ -419,6 +419,10 @@ Quantity = floor( (initialCapitalLong / LimitPrice) / order_round_factor ) * ord
 | Falsches Tab | Browser mit nur einem Fusion Tab starten / andere Tabs schließen |
 | Shadow DOM Probleme | DEBUG_MODE=1 + DEEP_INPUT_DEBUG=1 setzen und HTML Dump prüfen |
 
+---
+
+Weitere Skripte und Kurzbeschreibung: siehe `TRADING_SCRIPTS.md`.
+
 HTML Dumps werden als `fusion_debug_*.html` abgelegt.
 
 ### 📋 Vollständige ENV Variable Referenz (fusion_existing_all_trades_auto.py)
