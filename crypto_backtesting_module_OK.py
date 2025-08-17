@@ -1,4 +1,6 @@
 import warnings
+
+import debug_equity_calculation
 warnings.simplefilter("ignore", category=FutureWarning)
 import webbrowser
 import os
@@ -113,13 +115,13 @@ def flatten_crypto_header(df):
         
         print("Header nach Korrektur:", df.columns.tolist())
         print(f"Data shape: {df.shape}")
-        print(f"Date range: {df.index.min()} to {df.index.max()}")
+    print(f"Date range: {df.index.min()} to {df.index.max()}")
         
-        # Create a clean display copy with Date as a visible column
-        display_df = df.reset_index()
-        print(display_df.head().to_string(index=False))
+    # Create a clean display copy with Date as a visible column
+    display_df = df.reset_index()
+    print(display_df.tail().to_string(index=False))
         
-        return df
+    return df
     
     # Rest of the function for other cases...
     rows_to_skip = 0
@@ -172,7 +174,7 @@ def flatten_crypto_header(df):
     
     # Create a clean display copy with Date as a visible column
     display_df = df.reset_index()
-    print(display_df.head().to_string(index=False))
+    print(display_df.tail().to_string(index=False))
     
     return df
 
@@ -881,6 +883,7 @@ def run_crypto_backtests(
         return pd.DataFrame()
 
 def main():
+    debug_equity_calculation.py     
     for symbol, cfg in crypto_tickers.items():
         print(f"\n🔄 Bearbeite {symbol} ...")
         try:

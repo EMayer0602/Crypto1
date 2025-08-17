@@ -123,10 +123,10 @@ def flatten_crypto_header(df):
         df.index = pd.to_datetime(df.index)
     df.index.name = "Date"
     
-    # Display - NUR die ersten 5 Zeilen!
+    # Display - die letzten 5 Zeilen!
     print(f"Data shape: {df.shape}")
     print(f"Date range: {df.index.min()} to {df.index.max()}")
-    print(df.reset_index().head(5).to_string(index=False))  # <-- LIMIT auf 5!
+    print(df.reset_index().tail(5).to_string(index=False))  # <-- LIMIT auf 5 (TAIL)!
     
     return df
 
@@ -1873,14 +1873,11 @@ def run_backtest(symbol, config):
         if df_bt is None or df_bt.empty:
             print(f"❌ Backtest Frame creation failed for {symbol}")
             return False
-            
+
         print(f"📊 Backtest Frame: {len(df_bt)} Zeilen ({df_bt.index[0].date()} bis {df_bt.index[-1].date()})")
         print(f"📊 Backtest Range: {backtesting_begin}% - {backtesting_end}% der Daten")
-        
-        # 1. HEAD UND TAIL DER DAILY DATA
-        print(f"\n📊 1. DAILY DATA - HEAD (5 Zeilen) - {symbol}")
-        print("="*80)
-        print(df.head().to_string())
+
+        # 1. DAILY DATA (nur TAIL)
         print(f"\n📊 1. DAILY DATA - TAIL (5 Zeilen) - {symbol}")
         print("="*80)
         print(df.tail().to_string())
@@ -2085,56 +2082,100 @@ def run_backtest(symbol, config):
             print(f"🔍 DEBUG: Latest dates from original df:")
             print(df.tail(5).index.tolist())
             
-            # Da ext_full numerische Indices hat, verwende ich die letzten X Trades
-            # anstatt Datum-Filter
-            last_14_days_count = min(14, len(ext_full))  # Nimm die letzten 14 Trades oder weniger
+            # Nimm die 14 NEUESTEN Trades (nicht die ältesten)
+            last_14_days_count = min(14, len(ext_full))
             recent_ext_trades = ext_full.tail(last_14_days_count).copy()
+            # Für Anzeige umkehren: Neueste zuerst
+            recent_ext_trades_display = recent_ext_trades.iloc[::-1]
             
             if not recent_ext_trades.empty:
-                print(f"📈 {len(recent_ext_trades)} Extended Trades in den letzten 2 Wochen:")
-                print("-" * 80)
-                
-                for idx, (row_idx, trade) in enumerate(recent_ext_trades.iterrows()):
-                    # Verwende den row_idx um das entsprechende Datum aus df zu holen
+                # Baue eine Liste der tatsächlich anzuzeigenden Trades (nur BUY/SELL) mit Datum
+                computed_rows = []
+                for row_idx, trade in recent_ext_trades_display.iterrows():
+                    # Bestimme das Trade-Datum robust, unabhängig von einer 'Date'-Spalte
+                    trade_date = "N/A"
+                    current_trade_date = None
                     try:
-                        trade_date = df.index[row_idx].strftime('%Y-%m-%d')
-                    except (IndexError, KeyError):
+                        # Falls row_idx ein Integer-Positionsindex ist
+                        if isinstance(row_idx, (int, np.integer)):
+                            dt = df.index[row_idx]
+                        else:
+                            # Falls row_idx bereits ein Timestamp oder Datum ist
+                            dt = pd.to_datetime(row_idx)
+                        # Normalisieren und formattieren
+                        if isinstance(dt, pd.Timestamp):
+                            trade_date = dt.strftime('%Y-%m-%d')
+                            current_trade_date = dt.date()
+                        else:
+                            trade_date = str(dt)
+                    except Exception:
                         trade_date = f"Row-{row_idx}"
                     
                     # Extended trades structure
                     action = trade.get('Long Action', 'N/A')
-                    if action == 'N/A':
+                    if action in ['N/A', None, '']:
                         action = trade.get('Action', 'N/A')
                     
                     # Filter nur echte Trades (BUY/SELL), keine None
-                    if action in [None, 'None', 'N/A', '', 'none']:
-                        continue  # Überspringe None-Trades
+                    if str(action).lower() not in ['buy', 'sell']:
+                        continue  # Überspringe Nicht-Trades
                     
-                    price = trade.get('Close', 0)
+                    price = trade.get('Level Close', trade.get('Close', 0))
                     
                     today = datetime.now().date()
-                    try:
-                        current_trade_date = df.index[row_idx].date()
-                    except (IndexError, KeyError):
-                        current_trade_date = datetime(2024, 1, 1).date()  # Default old date
+                    if current_trade_date is None:
+                        try:
+                            # Fallback via df.index wenn möglich
+                            if isinstance(row_idx, (int, np.integer)):
+                                current_trade_date = df.index[row_idx].date()
+                            else:
+                                current_trade_date = pd.to_datetime(row_idx).date()
+                        except Exception:
+                            current_trade_date = datetime(2000, 1, 1).date()  # sicherer Default
                     
-                    if current_trade_date == today:
-                        type_desc = "Artificial"
-                    else:
-                        type_desc = "Limit"
+                    type_desc = "Artificial" if current_trade_date == today else "Limit"
                     
-                    if action in ['BUY', 'Buy', 'buy']:
+                    if str(action).lower() == 'buy':
                         action_emoji = "🔓 BUY"
-                    elif action in ['SELL', 'Sell', 'sell']:
+                    elif str(action).lower() == 'sell':
                         action_emoji = "🔒 SELL"
                     else:
                         action_emoji = f"📊 {action}"
                     
-                    print(f"  {idx+1}. {symbol} | {action_emoji} | {trade_date} | Type: {type_desc} | Price: {price:.4f}")
+                    computed_rows.append({
+                        'symbol': symbol,
+                        'action_emoji': action_emoji,
+                        'trade_date_str': trade_date,
+                        'trade_date': current_trade_date,
+                        'type_desc': type_desc,
+                        'price': float(price)
+                    })
+
+                # Filter: Rollierendes 15-Tage-Fenster (ankert am letzten verfügbaren DF-Datum)
+                try:
+                    latest_df_date = df.index.max().date() if len(df.index) > 0 else datetime.now().date()
+                except Exception:
+                    latest_df_date = datetime.now().date()
+                ref_date = min(datetime.now().date(), latest_df_date)
+                cutoff_date = ref_date - timedelta(days=15)
+                window_rows = [
+                    r for r in computed_rows
+                    if isinstance(r['trade_date'], type(ref_date)) and (cutoff_date <= r['trade_date'] <= ref_date)
+                ]
+                # Sortiere neueste zuerst und nimm die neuesten 14
+                window_rows.sort(key=lambda r: r['trade_date'], reverse=True)
+                printed_rows = window_rows[:14]
+
+                # Überschrift mit tatsächlicher Anzahl
+                print(f"📈 {len(printed_rows)} Extended Trades in den letzten 15 Tagen (neueste zuerst):")
+                print("-" * 80)
+
+                for i, row in enumerate(printed_rows, start=1):
+                    print(f"  {i}. {row['symbol']} | {row['action_emoji']} | {row['trade_date_str']} | Type: {row['type_desc']} | Price: {row['price']:.4f}")
                     
                 # Für HTML Report - richtige Tabelle erstellen
                 html_content = f"""
-                <h3>📅 Extended Trades der letzten 2 Wochen ({len(recent_ext_trades)} Trades)</h3>
+                <h3>📅 Extended Trades der letzten 2 Wochen ({len(recent_ext_trades)} Trades, neueste zuerst)</h3>
                 <table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;">
                     <thead style="background-color: #f2f2f2;">
                         <tr>
@@ -2149,32 +2190,15 @@ def run_backtest(symbol, config):
                     <tbody>
                 """
                 
-                for idx, (date_idx, trade) in enumerate(recent_ext_trades.iterrows()):
-                    # Convert date index to proper datetime
-                    date_obj = pd.to_datetime(trade['Date']) if 'Date' in trade else pd.to_datetime(date_idx)
-                    trade_date = date_obj.strftime('%Y-%m-%d')
-                    action = trade.get('Action', 'N/A')
-                    price = trade.get('Close', 0)
-                    
-                    today = datetime.now().date()
-                    current_trade_date = date_obj.date()
-                    type_desc = "Artificial" if current_trade_date == today else "Limit"
-                    
-                    if action in ['BUY', 'Buy']:
-                        action_display = "🔓 BUY"
-                    elif action in ['SELL', 'Sell']:
-                        action_display = "🔒 SELL"
-                    else:
-                        action_display = f"📊 {action}"
-                    
+                for i, row in enumerate(printed_rows, start=1):
                     html_content += f"""
                         <tr>
-                            <td>{idx+1}</td>
-                            <td>{symbol}</td>
-                            <td>{action_display}</td>
-                            <td>{trade_date}</td>
-                            <td>{type_desc}</td>
-                            <td>{price:.4f}</td>
+                            <td>{i}</td>
+                            <td>{row['symbol']}</td>
+                            <td>{row['action_emoji']}</td>
+                            <td>{row['trade_date_str']}</td>
+                            <td>{row['type_desc']}</td>
+                            <td>{row['price']:.4f}</td>
                         </tr>
                     """
                 

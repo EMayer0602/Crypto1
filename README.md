@@ -2,6 +2,28 @@
 
 Ein robustes, produktionsreifes Python-Framework für Kryptowährungs-Backtesting, Handelsanalyse und automatisierte Berichtserstellung.
 
+## 🚨 **SICHERHEITSUPDATE (17.08.2025)**
+
+**KRITISCHE SICHERHEITSVERBESSERUNG:** Absolute Notbremse für Bitpanda Fusion Automation
+
+### 🔐 Ultra-sichere Fusion Automation
+```powershell
+# ULTIMATE SAFETY - NUR PREVIEW, NIEMALS ÜBERTRAGUNG
+.\run_ultimate_safety.ps1 -IncludeLastDays 1 -AllowPast -Debug
+```
+
+**Funktionen:**
+- ✅ **SOL-EUR Auswahl** - Automatisch
+- ✅ **MAX Button Aktivierung** - Erzwungen  
+- ✅ **-25bps für SELL** - Bessere Preise
+- 🚨 **ABSOLUTE NOTBREMSE** - Niemals echte Orders übertragen
+
+**Sicherheitsmerkmale:**
+- 🛑 **Dreifache Notbremse** in `review_and_submit_order()`
+- 🔒 **Review-Button Klicks blockiert** 
+- ✋ **SAFE_PREVIEW_MODE=1** erzwungen
+- 📊 **Alle UI-Features funktional** aber sicher
+
 ## ⚡ Quick Links
 - [Daten-Update (Yahoo + Bitpanda)](#daten-update-yahoo--bitpanda)
 - [Details: README_DATA_PIPELINE.md](README_DATA_PIPELINE.md)
@@ -347,15 +369,34 @@ Bei Fragen oder Problemen:
 
 ## 🔥 Bitpanda Fusion Multi-Trade Auto-Fill
 
-Automatisches Vorbefüllen von Limit BUY/SELL Orders im bereits geöffneten Bitpanda Fusion Browser-Tab. Letzter Klick (Review / Bestätigen) bleibt bewusst manuell zur finalen Kontrolle.
+**🚨 SICHERHEITSUPDATE (17.08.2025): Absolute Notbremse implementiert**
 
-### ✅ Features
+Automatisches Vorbefüllen von Limit BUY/SELL Orders im bereits geöffneten Bitpanda Fusion Browser-Tab. **NIEMALS echte Orders übertragen** - nur Vorbereitung mit absoluter Sicherheit.
+
+### 🔐 **ULTIMATE SAFETY MODE**
+```powershell
+# EMPFOHLEN: Ultra-sichere Version
+.\run_ultimate_safety.ps1 -IncludeLastDays 1 -AllowPast -Debug
+
+# Standard-Version (ebenfalls sicher)
+.\run_fusion_preview.ps1 -IncludeLastDays 1 -AllowPast -Debug
+```
+
+### ✅ Sicherheitsmerkmale
+- 🚨 **Dreifache Notbremse** in `review_and_submit_order()`
+- 🛑 **Review-Button Klicks blockiert** auf Code-Ebene
+- 🔒 **SAFE_PREVIEW_MODE=1** erzwungen
+- ✋ **Absolute Sperre** gegen Orderübertragung
+- 📊 **Debug-Ausgabe** zeigt alle Sicherheitschecks
+
+### ✅ Funktionale Features  
 - Automatisches Anhängen an laufende Chrome/Edge Session (Remote Debug Port 9222)
 - Laden der neuesten `TODAY_ONLY_trades_*.csv` (Semikolon-getrennt)
+- **SOL-EUR Auswahl** - Erzwungen über UI-Fixes
+- **MAX Button Aktivierung** - Erzwungen für alle Seiten
+- **-25bps für SELL** - Bessere Verkaufspreise  
 - Sequenzielles Eintragen aller Trades (Open → BUY, Close → SELL)
 - Strategie erzwingen: Limit Order
-- BUY Preis automatisch: -25bps Button (wenn vorhanden)
-- SELL Preis automatisch: +25bps Button (wenn vorhanden)
 - SELL Menge: Max Button
 - BUY Menge: Berechnung aus `initialCapitalLong / LimitPrice` unter Berücksichtigung von `order_round_factor` + Asset-spezifischer Dezimalrundung
 - Mehrstufige Feld-Erkennung (Direkte Selektoren, Heuristiken, Shadow DOM, JS Fallback)

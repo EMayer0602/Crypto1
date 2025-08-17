@@ -53,28 +53,40 @@ def calculate_support_resistance(df, p, tw, verbose=False, ticker=None):
     if "Close" not in df.columns:
         raise KeyError(f"'Close' column missing! Available columns: {list(df.columns)}")
 
-    total_window = int(p + tw)  # Both optimized parameters
+    # Find extrema using past-window only; tw is used for confirmation later
+    past_window = int(p)
     prices = df["Close"].values
 
     # Find local minima (support levels)
-    local_min_idx = argrelextrema(prices, np.less, order=total_window)[0]
+    local_min_idx = argrelextrema(prices, np.less, order=past_window)[0]
     support = pd.Series(prices[local_min_idx], index=df.index[local_min_idx])
 
     # Find local maxima (resistance levels)
-    local_max_idx = argrelextrema(prices, np.greater, order=total_window)[0]
+    local_max_idx = argrelextrema(prices, np.greater, order=past_window)[0]
     resistance = pd.Series(prices[local_max_idx], index=df.index[local_max_idx])
 
-    # Add global extrema if not already included
-    absolute_low_date = df["Close"].idxmin()
-    absolute_low = df["Close"].min()
-    if absolute_low_date not in support.index:
-        support = pd.concat([support, pd.Series([absolute_low], index=[absolute_low_date])])
+    # Optional: include absolute extremes only if sufficiently in the past (>= tw days old)
+    last_date = df.index.max().date()
+    min_age_days = int(tw) if pd.notna(tw) else 0
+    try:
+        absolute_low_date = df["Close"].idxmin()
+        absolute_low = df["Close"].min()
+        if absolute_low_date not in support.index and (last_date - absolute_low_date.date()).days >= min_age_days:
+            support = pd.concat([support, pd.Series([absolute_low], index=[absolute_low_date])])
+    except Exception:
+        pass
+    try:
+        absolute_high_date = df["Close"].idxmax()
+        absolute_high = df["Close"].max()
+        if absolute_high_date not in resistance.index and (last_date - absolute_high_date.date()).days >= min_age_days:
+            resistance = pd.concat([resistance, pd.Series([absolute_high], index=[absolute_high_date])])
+    except Exception:
+        pass
 
-    absolute_high_date = df["Close"].idxmax()
-    absolute_high = df["Close"].max()
-    if absolute_high_date not in resistance.index:
-        resistance = pd.concat([resistance, pd.Series([absolute_high], index=[absolute_high_date])])
-
+    # Filter out very recent detections (within last tw days); they are not confirmed yet
+    if min_age_days > 0:
+        support = support[[ (last_date - idx.date()).days >= min_age_days for idx in support.index ]]
+        resistance = resistance[[ (last_date - idx.date()).days >= min_age_days for idx in resistance.index ]]
     support.sort_index(inplace=True)
     resistance.sort_index(inplace=True)
 
@@ -370,179 +382,108 @@ def assign_long_signals_base(support, resistance, data, tw):
 
 def get_trade_day_offset(date_hl, tw, data):
     """
-    ✅ KORRIGIERTE get_trade_day_offset Funktion
+    Return the first available trading day index in `data` that is on/after
+    date_hl + max(2, tw). Enforces a strict T+2 minimum delay.
     """
     try:
         if pd.isna(date_hl):
             return pd.NaT
-            
-        # Datum normalisieren
+
+        # Normalize date_hl to a date
         if isinstance(date_hl, str):
             date_hl = pd.to_datetime(date_hl).date()
         elif isinstance(date_hl, pd.Timestamp):
             date_hl = date_hl.date()
         elif not isinstance(date_hl, date):
             date_hl = pd.to_datetime(str(date_hl)).date()
-        
-        # Target Datum = Level Datum + Trade Window
-        target_date = date_hl + timedelta(days=tw)
-        
-        # Verfügbare Daten als Dates
+
+        # Strictly respect the optimized trade window (tw) only
+        try:
+            tw_int = int(tw)
+        except Exception:
+            tw_int = 1
+        target_date = date_hl + timedelta(days=tw_int)
+
+        # Find first data index on/after target_date
         data_dates = [d.date() if hasattr(d, 'date') else pd.to_datetime(d).date() for d in data.index]
-        
-        # Nächsten verfügbaren Handelstag finden
-        for i, d in enumerate(data_dates):
-            if d >= target_date:
+        for i, d0 in enumerate(data_dates):
+            if d0 >= target_date:
                 return data.index[i]
-        
-        # Falls nichts gefunden, letztes Datum zurückgeben
-        return data.index[-1] if len(data.index) > 0 else pd.NaT
-        
+
+        # No eligible date found
+        return pd.NaT
+
     except Exception as e:
         print(f"⚠️ Fehler in get_trade_day_offset für {date_hl}: {e}")
         return pd.NaT
-    """
-    Helper function to get the trade date offset from base date
-    """
-    future_dates = df.index[df.index > base_date]
-    if len(future_dates) < tw:
-        return pd.NaT
-    return future_dates[tw - 1]
 
 def assign_long_signals_extended(supp_full, res_full, df, tw, timeframe, trade_on="Close"):
     """
     CONSECUTIVE LOGIC: Nur erste Support/Resistance in Serie = Action
+    Enforce T+2: no same-day detection or trading; signals without eligible
+    trade day will be marked as None.
     """
     try:
         signals = []
-        
-        # Kombiniere und sortiere alle Levels chronologisch
+
+        # Collect all levels chronologically
         all_levels = []
-        
-        # Support Levels
         for date, level in supp_full.items():
-            all_levels.append({
-                'date': date,
-                'level': level,
-                'type': 'support',
-                'base_action': 'buy'
-            })
-        
-        # Resistance Levels
+            all_levels.append({'date': date, 'level': level, 'type': 'support', 'base_action': 'buy'})
         for date, level in res_full.items():
-            all_levels.append({
-                'date': date,
-                'level': level,
-                'type': 'resistance',
-                'base_action': 'sell'
-            })
-        
-        # WICHTIG: Chronologisch sortieren
+            all_levels.append({'date': date, 'level': level, 'type': 'resistance', 'base_action': 'sell'})
         all_levels.sort(key=lambda x: x['date'])
-        
-        # CONSECUTIVE LOGIC: Nur erste Support/Resistance in Serie = Action
+
         last_type = None
-        
         for level_info in all_levels:
             current_type = level_info['type']
-            
-            # NUR der erste in einer Serie bekommt Action
+            # Only first in a sequence gets an action
             if current_type != last_type:
-                # Typ-Wechsel oder allererster -> Action
                 action = level_info['base_action']
                 long_signal = (action == 'buy')
             else:
-                # Consecutive (gleicher Typ wie vorher) -> None
                 action = 'None'
                 long_signal = False
-            
-            # Update für nächste Iteration
             last_type = current_type
-            
-            # ✅ HANDELSDATUM MIT TW BERECHNEN
+
             trade_day = get_trade_day_offset(level_info['date'], tw, df)
-            
-            # Price based on trade_on setting
             price_column = "Open" if trade_on.upper() == "OPEN" else "Close"
-            if trade_day in df.index:
-                close_price = df.loc[trade_day, price_column]
-            elif level_info['date'] in df.index:
-                close_price = df.loc[level_info['date'], price_column]
+            # No same-day fallback: if tw-day not available, invalidate
+            if pd.isna(trade_day) or trade_day not in df.index:
+                close_price = np.nan
+                action = 'None'
+                long_signal = False
+                trade_day_str = ""
             else:
-                continue
-            
+                close_price = df.loc[trade_day, price_column]
+                trade_day_str = trade_day.strftime('%Y-%m-%d')
+
             signals.append({
                 'Date high/low': level_info['date'].strftime('%Y-%m-%d'),
-                'Level high/low': level_info['level'],
+                'Level high/low': float(level_info['level']),
                 'Supp/Resist': current_type,
-                'Action': action,  # buy/sell/None
+                'Action': action,
                 'Long Signal Extended': long_signal,
-                'Long Date detected': trade_day.strftime('%Y-%m-%d'),
+                'Long Date detected': trade_day_str,
+                'Long Trade Day': trade_day_str,
                 'Level Close': close_price,
-                'Long Trade Day': trade_day,
-                'Level trade': None
+                'Level trade': close_price
             })
-        
-        # DataFrame erstellen
+
         ext_df = pd.DataFrame(signals)
-        
         if not ext_df.empty:
             ext_df = ext_df.sort_values('Long Trade Day').reset_index(drop=True)
-            
-            # Statistiken für Debug (nur wenn DataFrame nicht leer)
-            buy_count = len(ext_df[ext_df['Action'] == 'buy'])
-            sell_count = len(ext_df[ext_df['Action'] == 'sell'])
-            none_count = len(ext_df[ext_df['Action'] == 'None'])
-            
-            # print(f"✅ CONSECUTIVE LOGIC Applied:")
-            # print(f"   📊 Total Signals: {len(ext_df)}")
-            # print(f"   📈 Buy Actions: {buy_count}")
-            # print(f"   📉 Sell Actions: {sell_count}")
-            # print(f"   ⏸️  None Actions: {none_count}")
         else:
-            print(f"⚠️  No signals generated")
-        
+            print("⚠️  No signals generated")
         return ext_df
-        
+
     except Exception as e:
         print(f"❌ Fehler: {e}")
         import traceback
         traceback.print_exc()
         return pd.DataFrame()
 
-def get_trade_day_offset(date_hl, tw, data):
-    """
-    ✅ VERBESSERTE get_trade_day_offset Funktion
-    """
-    try:
-        if pd.isna(date_hl):
-            return pd.NaT
-            
-        # Stelle sicher dass date_hl ein datetime ist
-        if isinstance(date_hl, str):
-            date_hl = pd.to_datetime(date_hl).date()
-        elif isinstance(date_hl, pd.Timestamp):
-            date_hl = date_hl.date()
-        elif not isinstance(date_hl, date):
-            date_hl = pd.to_datetime(str(date_hl)).date()
-        
-        # Finde den nächsten verfügbaren Handelstag nach date_hl + tw Tage
-        target_date = date_hl + timedelta(days=tw)
-        
-        # Konvertiere data.index zu date objects für Vergleich
-        data_dates = [d.date() if hasattr(d, 'date') else pd.to_datetime(d).date() for d in data.index]
-        
-        # Finde den nächsten verfügbaren Tag >= target_date
-        for i, d in enumerate(data_dates):
-            if d >= target_date:
-                return data.index[i]
-        
-        # Falls kein späteres Datum gefunden, return letztes verfügbares Datum
-        return data.index[-1] if len(data.index) > 0 else pd.NaT
-        
-    except Exception as e:
-        print(f"⚠️ Fehler in get_trade_day_offset: {e}")
-        return pd.NaT
+# (Duplicate get_trade_day_offset removed)
 
 def simulate_trades_compound_extended(signals_df, initial_capital, commission_rate, min_commission, 
                                     order_round_factor, data, trade_on_price='Close'):
@@ -610,8 +551,18 @@ def update_level_close_long(ext, df, trade_on="Close"):
 def berechne_best_p_tw_long(df, cfg, start_idx, end_idx, verbose=False, ticker=None):
     optimierungsergebnisse = []
 
-    for past_window in range(2, 15):  # Erweitert von 3-10 auf 2-15
-        for tw in range(1, 8):  # Erweitert von 1-6 auf 1-8
+    # Per-ticker constrained search ranges (default wide, XRP tighter)
+    if isinstance(ticker, str) and ('XRP' in ticker.upper()):
+        past_window_range = range(3, 11)   # 3-10
+        tw_range = range(2, 5)             # 2-4
+        if verbose:
+            print(f"🔧 Using constrained bounds for {ticker}: past_window=3..10, trade_window=2..4")
+    else:
+        past_window_range = range(2, 15)   # 2-14
+        tw_range = range(1, 8)             # 1-7
+
+    for past_window in past_window_range:  # Previously fixed range
+        for tw in tw_range:                # Previously fixed range
             try:
                 df_opt = df.iloc[start_idx:end_idx].copy()
                 # Both past_window and tw are optimized here

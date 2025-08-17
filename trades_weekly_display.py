@@ -248,9 +248,9 @@ def display_weekly_trades_console(matched_trades: List[Dict], data_df: pd.DataFr
         if not last_week_trades:
             print(f"❌ Keine Trades in den letzten {days_back} Tagen gefunden")
             return
-        
-        # Nach Datum sortieren (älteste zuerst)
-        last_week_trades.sort(key=lambda t: pd.to_datetime(t.get('buy_date', '1900-01-01')))
+
+        # Nach Datum sortieren (neueste zuerst)
+        last_week_trades.sort(key=lambda t: pd.to_datetime(t.get('buy_date', '1900-01-01')), reverse=True)
         
         # Heute bestimmen
         today = datetime.now().date()
@@ -319,11 +319,11 @@ def create_weekly_trades_html(matched_trades: List[Dict], data_df: pd.DataFrame,
         if not last_week_trades:
             return f"""
             <h3>📅 Trades der letzten {days_back} Tage - {symbol}</h3>
-            <p style="color: orange;">❌ Keine Trades in den letzten {days_back} Tagen gefunden</p>
+            <p style=\"color: orange;\">❌ Keine Trades in den letzten {days_back} Tagen gefunden</p>
             """
-        
-        # Nach Datum sortieren
-        last_week_trades.sort(key=lambda t: pd.to_datetime(t.get('buy_date', '1900-01-01')))
+
+        # Nach Datum sortieren (neueste zuerst)
+        last_week_trades.sort(key=lambda t: pd.to_datetime(t.get('buy_date', '1900-01-01')), reverse=True)
         
         # HTML Table erstellen
         html_content = f"""
