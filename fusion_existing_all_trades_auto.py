@@ -63,6 +63,10 @@ FORCE_MAX_BUTTON = _env_flag('FORCE_MAX_BUTTON','FUSION_FORCE_MAX_BUTTON', defau
 SELL_BPS_OFFSET = _env_flag('SELL_BPS_OFFSET','FUSION_SELL_BPS_OFFSET', default='-10')  # SELL: -bps (unter Marktpreis)
 PAPER_MODE = _env_flag('PAPER_MODE','FUSION_PAPER_MODE', default='0') in ('1','true','True')  # Paper: kein finaler Review Klick, Reset statt Absenden
 SAFE_PREVIEW_MODE = _env_flag('SAFE_PREVIEW_MODE','FUSION_SAFE_PREVIEW_MODE', default='0') in ('1','true','True')  # Nur anzeigen, niemals Review klicken
+# Ultimate safety/locks (from scripts)
+BLOCK_REVIEW = _env_flag('BLOCK_REVIEW','FUSION_BLOCK_REVIEW', default='0') in ('1','true','True')
+NO_SUBMIT = _env_flag('NO_SUBMIT','FUSION_NO_SUBMIT', default='0') in ('1','true','True')
+EMERGENCY_STOP = _env_flag('EMERGENCY_STOP','FUSION_EMERGENCY_STOP', default='0') in ('1','true','True')
 # Strikte TAB-Navigation gemäß Nutzerinstruktion
 STRICT_TAB_STEPS = _env_flag('STRICT_TAB_STEPS','FUSION_STRICT_TAB_STEPS', default='0') in ('1','true','True')
 TABS_TO_SIDE = int(_env_flag('TABS_TO_SIDE','FUSION_TABS_TO_SIDE', default='3'))
@@ -2249,29 +2253,33 @@ class FusionExistingAutomation:
             print(f"   ⚠️ Paar NICHT gewechselt (aktuell={final_pair}) – bitte manuell prüfen")
 
     def review_and_submit_order(self):
-        # 🚨🚨🚨 ABSOLUTE NOTBREMSE: NIEMALS TRADES ÜBERTRAGEN! 🚨🚨🚨
-        print('🚨🚨🚨 ABSOLUTE NOTBREMSE: TRADE ÜBERTRAGUNG BLOCKIERT! 🚨🚨🚨')
-        print('🛑🛑🛑 KEIN REVIEW/SUBMIT wird JEMALS geklickt! 🛑🛑🛑')
-        print('✋✋✋ NUR PREVIEW - NIEMALS ECHTE ORDERS! ✋✋✋')
-        
-        # DEBUGGING: Wer hat das aufgerufen?
-        if DEBUG_MODE:
-            import traceback
-            print('🔍 NOTBREMSE - Call Stack:')
-            traceback.print_stack()
-        
-        # SOFORTIGER EXIT - NIEMALS WEITER
-        return
-        
-        # === TOTER CODE UNTEN - NIEMALS ERREICHT ===
-        # Old logic below - should never be reached
-        # Hard safety: in SAFE PREVIEW never click Review/Submit at all
-        if SAFE_PREVIEW_MODE:
+        """Klickt in Abhängigkeit der Safety-Flags Review/Submit bzw. Reset.
+
+        - SAFE_PREVIEW_MODE: nichts klicken, nur zurückkehren
+        - PAPER_MODE: versucht Reset/Zurücksetzen/Abbrechen zu klicken
+        - REAL MODE: klickt Review; bei auto_submit zusätzlich Senden/Bestätigen
+        - SELL Doppelschutz optional via FORCE_SELL_TYPING
+        """
+        # 0) Global emergency/lock: keine Klicks
+        if EMERGENCY_STOP or BLOCK_REVIEW:
             if DEBUG_MODE:
-                print('   🔐 SAFE PREVIEW: Keine Review/Submit-Klicks')
+                print('   🛑 Lock aktiv: EMERGENCY_STOP/BLOCK_REVIEW – keine Review/Submit Klicks')
             return
+
+        # 1) Preview: Review klicken, aber NIEMALS final senden
+        if SAFE_PREVIEW_MODE:
+            selectors_review = [
+                "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'review')]",
+                "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'prüfen')]",
+            ]
+            clicked_review = self._try_click_selectors(selectors_review, 'Review Button (Preview)', required=False)
+            if not clicked_review and DEBUG_MODE:
+                print('   ⚠️ Preview: Review Button nicht gefunden (evtl. bereits im Review-Dialog)')
+            # In Preview niemals Submit klicken
+            return
+
+        # 2) Paper-Variante: UI zurücksetzen statt Review/Submit
         if PAPER_MODE:
-            # Statt Review -> Reset / Abbrechen Button
             selectors_reset = [
                 "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'reset')]",
                 "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'zurücksetzen')]",
@@ -2281,12 +2289,13 @@ class FusionExistingAutomation:
             clicked = self._try_click_selectors(selectors_reset, 'Reset Button (Paper)', required=False)
             if clicked:
                 print('   🔄 Paper Mode: Order zurückgesetzt (nur Anzeige).')
+            else:
+                print('   ⚠️ Paper Mode: Kein Reset-Button gefunden – bitte manuell prüfen.')
             return
-        # Real Mode: normaler Review + optional Submit
-        # SELL Doppelschutz: Nur wenn keine manuellen Klick-Wartezeiten aktiv sind
+
+        # 3) Real Mode: optionaler SELL-Doppelschutz (nur wenn kein WAIT_FOR_CLICK & kein Preview)
         if FORCE_SELL_TYPING and not WAIT_FOR_CLICK and not SAFE_PREVIEW_MODE:
             try:
-                # Prüfen ob SELL Seite aktiv ist
                 if self._is_side_active('SELL'):
                     confirm = input("❗ Sicherheitsabfrage SELL: tippe exakt 'SELL' um Review zu ermöglichen (ENTER = Abbruch): ").strip().upper()
                     if confirm != 'SELL':
@@ -2297,17 +2306,16 @@ class FusionExistingAutomation:
             except Exception:
                 print('⚠️ Eingabeproblem – SELL Sicherheit greift, Abbruch dieser Order')
                 return
-        # 🚨🚨🚨 ABSOLUTE BLOCKADE: NIEMALS REVIEW/SUBMIT KLICKEN! 🚨🚨🚨
-        print('🚨🚨🚨 REVIEW/SUBMIT BLOCKIERT - NUR PREVIEW! 🚨🚨🚨')
-        return  # SOFORTIGER EXIT
-        
-        # === TOTER CODE UNTEN - NIEMALS ERREICHT ===
+
+        # 4) Review klicken, dann ggf. final senden
         selectors_review = [
             "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'review')]",
             "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'prüfen')]",
         ]
-        # BLOCKIERT: self._try_click_selectors(selectors_review, 'Review Button', required=False)
-        if self.auto_submit:
+        clicked_review = self._try_click_selectors(selectors_review, 'Review Button', required=False)
+        if not clicked_review and DEBUG_MODE:
+            print('   ⚠️ Review Button nicht gefunden (evtl. bereits im Review-Dialog)')
+        if self.auto_submit and not NO_SUBMIT:
             selectors_send = [
                 "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'confirm')]",
                 "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'bestätigen')]",
@@ -3409,10 +3417,10 @@ class FusionExistingAutomation:
                         return
             except Exception:
                 pass
-            # SAFE PREVIEW: Order NICHT weiter klicken, Benutzer fragt Entscheidung ab
+            # SAFE PREVIEW: Nach Bestätigung Review klicken (aber niemals Submit)
             if SAFE_PREVIEW_MODE:
-                print('\n🔐 SAFE PREVIEW AKTIV – Order nur vorausgefüllt.')
-                print('   ENTER = nächste Order | c = diesen verwerfen | s = Rest überspringen | q = alles abbrechen')
+                print('\n🔐 SAFE PREVIEW AKTIV – Order vorbereitet. Keine automatische Übertragung.')
+                print('   ENTER = Review anzeigen | c = diesen verwerfen | s = Rest überspringen | q = alles abbrechen')
                 try:
                     choice = input('   Eingabe: ').strip().lower()
                 except KeyboardInterrupt:
@@ -3425,27 +3433,22 @@ class FusionExistingAutomation:
                     print('⏹️ Restliche Trades werden nicht mehr gezeigt.'); return
                 if choice == 'c':
                     print('♻️ Verworfen – UI bitte selbst zurücksetzen falls nötig.'); return
-                # ENTER -> einfach weiter ohne Review/Reset
-                return
-            # Optional NICHT automatisch Review klicken – Nutzer soll manuell klicken
+                # ENTER -> Review klicken (Submit wird in SAFE_PREVIEW nie ausgelöst)
+                self.review_and_submit_order(); time.sleep(0.2); return
+            # Review/Submit abhängig von WAIT_FOR_CLICK
             if not WAIT_FOR_CLICK:
-                print('🚨 NOTBREMSE: review_and_submit_order ÜBERSPRUNGEN!')
-                # self.review_and_submit_order(); time.sleep(0.2)  # DEAKTIVIERT
+                self.review_and_submit_order(); time.sleep(0.2)
             else:
                 if PAPER_MODE:
                     print('📝 PAPER MODE: Order nur ansehen. ENTER -> Reset (Zurücksetzen), dann nächster Trade.')
                 else:
-                    print('🖱️ REAL MODE: Prüfen & gewünschte Seite (Kaufen/Verkaufen) sichtbar lassen. ENTER -> Review (falls verfügbar).')
+                    print('🖱️ REAL MODE: ENTER -> Review (und ggf. Senden wenn AUTO_SUBMIT=1).')
                 try:
                     input()
                 except KeyboardInterrupt:
                     raise
                 # Nach Bestätigung: im Paper Mode zurücksetzen, im Real Mode Review klicken
-                print('🚨 NOTBREMSE: review_and_submit_order ÜBERSPRUNGEN!')
-                # if PAPER_MODE:
-                #     self.review_and_submit_order()  # nutzt Reset-Pfad in PAPER_MODE
-                # else:
-                #     self.review_and_submit_order()  # DEAKTIVIERT
+                self.review_and_submit_order()
         except Exception as e:
             print(f'❌ Trade {trade.get("id")} Fehler: {e}')
             self.dump_debug(f'trade_{trade.get("id")}_error')

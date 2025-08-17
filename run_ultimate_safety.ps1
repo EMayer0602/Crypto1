@@ -1,4 +1,4 @@
-param(
+^^param(
     [string]$TradesFile = '',
     [int]$IncludeLastDays = 0,   # 0 = only today; 1 = today + yesterday; 2 = today + last 2 days, ...
     [switch]$AllowPast,           # must be set to allow IncludeLastDays > 0
@@ -6,25 +6,27 @@ param(
     [switch]$DeepDebug            # enable deep input/JS debug logs
 )
 
-Write-Host "🚨🚨🚨 ULTIMATE SAFETY MODE - NIEMALS ORDERS ÜBERTRAGEN! 🚨🚨🚨" -ForegroundColor Red -BackgroundColor Yellow
-Write-Host "✋✋✋ NUR PREVIEW - ABSOLUTE NOTBREMSE AKTIV! ✋✋✋" -ForegroundColor Red
+Write-Host "🧪 TEST MODE – Review erlaubt, Submit BLOCKIERT" -ForegroundColor Yellow -BackgroundColor Black
+Write-Host "✋ Kein automatisches Senden – Sie prüfen im Review." -ForegroundColor Yellow
 Write-Host ""
 
 # Move to script directory
 Set-Location -Path (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
-# 🚨🚨🚨 ABSOLUTE SAFETY FLAGS 🚨🚨🚨
-$Env:FUSION_SAFE_PREVIEW_MODE = '1'      # ULTIMATE SAFETY
-$Env:FUSION_WAIT_FOR_CLICK     = '1'      # ULTIMATE SAFETY
-$Env:FUSION_AUTO_SUBMIT        = '0'      # ULTIMATE SAFETY
-$Env:FUSION_AUTO_CONTINUE      = '0'      # ULTIMATE SAFETY
+<# Preview + No-Submit: alles vorbereiten, Review öffnen, niemals senden #>
+$Env:FUSION_SAFE_PREVIEW_MODE = '1'
+$Env:FUSION_WAIT_FOR_CLICK     = '1'
+$Env:FUSION_AUTO_SUBMIT        = '0'
+$Env:FUSION_AUTO_CONTINUE      = '0'
 
-# 🔒🔒🔒 EXTRA SAFETY LOCKS 🔒🔒🔒
-$Env:FUSION_PAPER_MODE         = '1'      # Zusätzlicher Schutz
-$Env:FUSION_EMERGENCY_STOP     = '1'      # Notbremse
-$Env:FUSION_PREVIEW_ONLY       = '1'      # Nur Vorschau
-$Env:FUSION_NO_SUBMIT          = '1'      # Nie absenden
-$Env:FUSION_BLOCK_REVIEW       = '1'      # Review blockieren
+# 🔒 Nur Submit blockieren, Review erlauben
+$Env:FUSION_PAPER_MODE         = '0'
+$Env:FUSION_PREVIEW_ONLY       = '1'
+$Env:FUSION_NO_SUBMIT          = '1'
+$Env:NO_SUBMIT                 = '1'
+# Wichtig: NICHT Review blockieren, KEIN Emergency Stop
+$Env:FUSION_BLOCK_REVIEW       = '0'
+$Env:FUSION_EMERGENCY_STOP     = '0'
 
 # Working features (SOL-EUR, MAX, BPS)
 $Env:FUSION_USE_MAX            = '1'
@@ -61,15 +63,15 @@ if ($AllowPast -and $IncludeLastDays -gt 0) {
     $Env:FUSION_ALLOW_PAST      = '0'
 }
 
-# Echo safety summary
-Write-Host "🔐 ULTIMATE SAFETY: SAFE=$($Env:FUSION_SAFE_PREVIEW_MODE) | PAPER=$($Env:FUSION_PAPER_MODE) | AUTO_SUBMIT=$($Env:FUSION_AUTO_SUBMIT)" -ForegroundColor Green
+# Echo summary
+Write-Host "🔐 TEST NO-SUBMIT: SAFE=$($Env:FUSION_SAFE_PREVIEW_MODE) | NO_SUBMIT=$($Env:FUSION_NO_SUBMIT) | AUTO_SUBMIT=$($Env:FUSION_AUTO_SUBMIT)" -ForegroundColor Green
 Write-Host "📊 FEATURES: INCLUDE_LAST_DAYS=$IncludeLastDays | DEBUG=$($Env:FUSION_DEBUG) | FORCE_MAX=$($Env:FUSION_FORCE_MAX_BUTTON)" -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "🚀 Starte ULTRA-SICHERE Automation (NUR PREVIEW)..." -ForegroundColor Green
+Write-Host "🚀 Starte PREVIEW (Review ja, Submit nein)..." -ForegroundColor Green
 
-# Launch the automation (ULTIMATE SAFETY ensures NO execution)
+# Launch the automation (no submission in this mode)
 python .\fusion_existing_all_trades_auto.py
 
 Write-Host ""
-Write-Host "✅ ABGESCHLOSSEN - ALLE ORDERS NUR VORBEREITET, NIEMALS ÜBERTRAGEN!" -ForegroundColor Green -BackgroundColor Black
+Write-Host "✅ Fertig – Review angezeigt, Senden blockiert (NO_SUBMIT=1)." -ForegroundColor Green
