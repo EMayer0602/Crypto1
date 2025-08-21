@@ -398,6 +398,141 @@ Automatisches Vorbefüllen von Limit BUY/SELL Orders im bereits geöffneten Bitp
 - Sequenzielles Eintragen aller Trades (Open → BUY, Close → SELL)
 - Strategie erzwingen: Limit Order
 - SELL Menge: Max Button
+
+### 🚀 Bitpanda Fusion Trading – Schnellanleitung (Preview-Only)
+
+Automatisches Vorbefüllen einzelner Orders über `BitpandaFusion_trade.py` im bereits geöffneten Bitpanda-Fusion-Tab. Keine echte Orderübertragung – der Senden-Button wird nur optisch markiert.
+
+#### Voraussetzungen
+- Chrome (oder Edge) mit Remote Debugging
+- Fusion-Tab bereits geöffnet und eingeloggt: https://web.bitpanda.com/fusion/trade/BTC-EUR
+
+Start Chrome (Windows):
+```powershell
+"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\ChromeProfile"
+```
+
+#### Ausführen
+```powershell
+python BitpandaFusion_trade.py
+```
+
+Unterstützte Umgebungsvariablen (optional, für Geschwindigkeit):
+- `FUSION_SHORT_WAIT_SEC` (Default 1.2)
+- `FUSION_POLL_SEC` (Default 0.05)
+- `FUSION_TAB_CLICK_DELAY_SEC` (Default 0.08)
+- `FUSION_PREVIEW_PAUSE_MS` (Default 1000)
+
+Setzen in PowerShell z. B. temporär:
+```powershell
+$env:FUSION_SHORT_WAIT_SEC = "0.8"; $env:FUSION_POLL_SEC = "0.03"; python BitpandaFusion_trade.py
+```
+
+#### Orders (`orders.json`)
+Minimalbeispiel:
+```json
+{
+    "orders": [
+        { "pair": "LINK-EUR", "action": "buy",  "strategy": "Limit",  "amount": 3, "limit_price": "Gebot" },
+        { "pair": "ETH-EUR",  "action": "sell", "strategy": "Market", "amount": "Max." }
+    ]
+}
+```
+
+Felder:
+- `pair`: z. B. "BTC-EUR", "ETH-EUR", "LINK-EUR"
+- `action`: "buy" | "sell"
+- `strategy`: "Limit" | "Market" | "Stop-Limit"
+- `amount`: Zahl oder "Max." (bei Sell sinnvoll)
+- `limit_price` (nur Limit/Stop-Limit):
+    - Bid: "Gebot", "Geldkurs", "Bid"
+    - Ask: "Brief", "Briefkurs", "Ask", "Angebot"
+    - Mid: "Mittel", "Mid", "Mittelkurs", "Mittlerer Preis"
+
+Hinweise zur UI/Strategie:
+- Strategie wird über das Dropdown exakt gesetzt (de/en): "Limit", "Market/Markt", "Stop Limit".
+- Deutsch/Englisch werden automatisch erkannt (z. B. "Markt" für Market).
+- Der Senden-Button wird nur markiert, es wird nichts abgeschickt.
+
+Troubleshooting:
+- Prüfen, dass Chrome mit Port 9222 läuft und der Fusion-Tab aktiv ist.
+- Bei UI-Änderungen ggf. `orders.json`-Labels anpassen (z. B. anderer Wortlaut für Preis-Voreinstellungen).
+---
+
+## Bitpanda Fusion – Safe Preview Trading (No-Submit)
+
+Dokumentation für die sichere Vorschau-Automation, die an eine bestehende Browser-Session andockt und Orders nur vorbereitet (kein Submit).
+
+### Überblick
+- `BitoandFusion_trade.py`: hängt sich an Chrome/Edge (Remote-Debugging) und bereitet eine einzelne Order auf der geöffneten Fusion-Seite vor.
+- `run_next_order.py`: liest die nächste Order aus `orders.json`, stellt zuerst den Ticker ein, bereitet die Order im Preview-Modus vor und aktualisiert `orders_state.json`.
+- `fusion_emergency_fixes.py`: robuste Auswahl/Verifikation des Paares (Pair-First).
+
+### Sicherheit
+- Standard: Preview-only (Send wird NICHT geklickt; Button wird nur markiert).
+- Guards: ETH-USD SELL blockiert; XRP-EUR BUY blockiert.
+- Pair-First: Zuerst Ticker umstellen, dann Side/BPS/Menge.
+
+### Voraussetzungen
+- Windows PowerShell.
+- Chrome/Edge mit Remote Debugging gestartet, bei Bitpanda Fusion eingeloggt und die Trade-Seite ist offen.
+- Python 3.11+ mit Selenium.
+
+### 1) Browser mit Remote Debugging starten
+Chrome:
+```powershell
+& 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe' --remote-debugging-port=9222 --user-data-dir='C:\\ChromeProfile'
+```
+Edge:
+```powershell
+& 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' --remote-debugging-port=9222 --user-data-dir='C:\\EdgeProfile'
+```
+Anschließend z. B. https://web.bitpanda.com/fusion/trade/ETH-EUR öffnen.
+
+### 2) Nächste Order aus `orders.json` laufen lassen
+```powershell
+cd 'c:\\Users\\Edgar.000\\Documents\\____Trading strategies\\Crypto_trading1'
+$env:FUSION_DEBUG_PORT='9222'
+C:/Users/Edgar.000/AppData/Local/Microsoft/WindowsApps/python3.13.exe .\\run_next_order.py
+```
+Verhalten: Liest `orders.json` → nächster Eintrag → hängt sich an Browser → stellt Pair ein → setzt Side/Menge/BPS → markiert den Senden-Button (kein Klick) → aktualisiert `orders_state.json`.
+
+Neu starten: `orders_state.json` löschen.
+
+`orders.json` Beispiel:
+```json
+{
+    "orders": [
+        { "pair": "ETH-EUR", "side": "sell" },
+        { "pair": "ETH-EUR", "side": "buy",  "amount_base": 0.1010 }
+    ]
+}
+```
+
+### 3) Manuelle Einzel-Order (ohne orders.json)
+```powershell
+cd 'c:\\Users\\Edgar.000\\Documents\\____Trading strategies\\Crypto_trading1'
+$env:FUSION_DEBUG_PORT='9222'
+$env:FUSION_ONLY_PAIR='ETH-EUR'
+$env:FUSION_ONLY_ACTION='BUY'   # oder SELL
+$env:FUSION_QTY='0.1234'        # optional für BUY
+$env:FUSION_BPS='-25'           # BUY: -25bps; SELL: +25bps
+$env:FUSION_NO_SUBMIT='1'       # Preview-Only
+C:/Users/Edgar.000/AppData/Local/Microsoft/WindowsApps/python3.13.exe .\\BitoandFusion_trade.py
+```
+
+### Umgebungsvariablen
+- `FUSION_DEBUG_PORT` (Default `9222`), optional `FUSION_DEBUG_ADDRESS` (z. B. `127.0.0.1:9222`).
+- `FUSION_USE_EDGE=1` für Edge.
+- `FUSION_TAB_TITLE` (Teilstring des Tab-Titels, Default `Fusion`).
+- `FUSION_NO_SUBMIT=1` Preview-only.
+- `FUSION_ONLY_PAIR`, `FUSION_ONLY_ACTION` (BUY/SELL), `FUSION_QTY` (Dezimal), `FUSION_BPS` (z. B. `-25`).
+
+### Troubleshooting
+- Endpoint nicht erreichbar: Browser mit `--remote-debugging-port=9222` starten; http://127.0.0.1:9222/json/version prüfen.
+- Send-Button nicht gefunden: Labels variieren (Senden/Submit/Bestätigen). Skript nutzt mehrere Selektoren und Fallback-Hervorhebung.
+- Driver-Downloads: `CHROMEDRIVER`/`EDGEDRIVER` auf lokalen Pfad setzen.
+- Windows-Pfade: Pfade mit Leerzeichen quoten oder zuerst ins Verzeichnis wechseln.
 - BUY Menge: Berechnung aus `initialCapitalLong / LimitPrice` unter Berücksichtigung von `order_round_factor` + Asset-spezifischer Dezimalrundung
 - Mehrstufige Feld-Erkennung (Direkte Selektoren, Heuristiken, Shadow DOM, JS Fallback)
 - Sicherheitsschutz gegen versehentliche Verkäufe (Whitelist, Confirm, Fraction, Preis-Guard)
@@ -422,7 +557,7 @@ Browser muss bereits mit eingeloggtem Bitpanda Fusion Tab laufen. Optional Chrom
 | USE_BPS_BUTTONS | 1 | BUY -25bps / SELL +25bps Buttons für Limitpreis |
 | DISABLE_SELLS | 0 | Alle SELLs komplett blockieren |
 | SELL_CONFIRM | 1 | Manuelle Bestätigung je SELL (y / skip) |
-| SELL_WHITELIST | (leer) | Kommagetrennte Liste erlaubter SELL Paare (z.B. BTC-EUR,ETH-EUR) |
+<!-- SELL_WHITELIST removed: keine Paar-Whitelist mehr für SELL -->
 | MAX_SELL_FRACTION | 1.0 | Maximaler Anteil der gehaltenen Menge pro SELL (0.25 = 25%) |
 | STRICT_SELL_PRICE_PROTECT | 0 | Max. relativer Abschlag unter Marktpreis (z.B. 0.05 = 5%) |
 | DEBUG_MODE | 0 | Erweiterte Logausgaben |
@@ -432,7 +567,7 @@ Setzen (Beispiele PowerShell):
 ```powershell
 $env:SELL_CONFIRM="1"
 $env:DISABLE_SELLS="0"
-$env:SELL_WHITELIST="BTC-EUR,LINK-EUR"
+# SELL_WHITELIST entfernt – keine Konfiguration nötig
 $env:MAX_SELL_FRACTION="0.5"
 $env:STRICT_SELL_PRICE_PROTECT="0.03"
 python fusion_existing_all_trades_auto.py
@@ -441,7 +576,7 @@ python fusion_existing_all_trades_auto.py
 ### 🔐 Sicherheitslogik SELL
 Prüf-Reihenfolge vor Ausführung:
 1. DISABLE_SELLS → Abbruch
-2. SELL_WHITELIST (falls gesetzt) → Abbruch wenn nicht enthalten
+2. SELL_WHITELIST entfernt – kein Abbruch mehr auf Basis einer Whitelist
 3. MAX_SELL_FRACTION (falls Portfolio-Menge erkannt) → Abbruch wenn überschritten
 4. STRICT_SELL_PRICE_PROTECT (falls Marktpreis verfügbar) → Abbruch wenn Limit zu tief
 5. SELL_CONFIRM → Nachfrage (Abort wenn nicht bestätigt)
@@ -489,7 +624,7 @@ HTML Dumps werden als `fusion_debug_*.html` abgelegt.
 | USE_BPS_BUTTONS | FUSION_USE_BPS | 1 | Aktiviert -25bps (BUY) / +25bps (SELL) Preis Buttons |
 | DISABLE_SELLS | FUSION_DISABLE_SELLS | 0 | Blockiert alle SELL Trades vollständig |
 | SELL_CONFIRM | FUSION_SELL_CONFIRM | 1 | Interaktive Bestätigung vor SELL |
-| SELL_WHITELIST | FUSION_SELL_WHITELIST | (leer) | Erlaubte SELL Paare (Kommagetrennt) |
+<!-- SELL_WHITELIST removed -->
 | MAX_SELL_FRACTION | FUSION_MAX_SELL_FRACTION | 1.0 | Anteil der gehaltenen Menge der verkauft werden darf |
 | STRICT_SELL_PRICE_PROTECT | FUSION_STRICT_SELL_PRICE_PROTECT | 0 | Preis-Schutz: max Abschlag unter Markt (z.B. 0.05) |
 | SLOW_KEYS_DELAY | FUSION_SLOW_KEYS_DELAY | 0.0 | Verzögerung je Taste wenn SLOW_KEYSTROKES aktiv (falls implementiert) |
