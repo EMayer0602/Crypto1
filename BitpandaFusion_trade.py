@@ -13,7 +13,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
-from fusion_emergency_fixes import fix_pair_selection_target
+try:
+    from fusion_emergency_fixes import fix_pair_selection_target  # restored dependency
+except ImportError:
+    def fix_pair_selection_target(*args, **kwargs):  # minimal no-op fallback
+        print("[warn] fusion_emergency_fixes missing; pair switch skipped")
+        return False
 
 # Visible preview banner to show activity in the Fusion UI
 def _inject_preview_banner(driver, text: str):
