@@ -39,8 +39,8 @@ def extract_trades_from_backtest_results():
     cutoff_date = datetime.now() - timedelta(days=14)
     all_trades = []
     
-    # Header inkl. Action (BUY/SELL)
-    header = "Date;Ticker;Quantity;Price;Order Type;Limit Price;Open/Close;Action;Realtime Price Bitpanda"
+    # Header inkl. Action (BUY/SELL) und ArtificialIncluded-Flag
+    header = "Date;Ticker;Quantity;Price;Order Type;Limit Price;Open/Close;Action;Realtime Price Bitpanda;ArtificialIncluded"
     
     for ticker_name, config in crypto_tickers.items():
         symbol = config.get('symbol', ticker_name)
@@ -60,12 +60,50 @@ def extract_trades_from_backtest_results():
             if matched_trades is None or matched_trades.empty:
                 print(f"   ⚠️ Keine Trades für {ticker_name}")
                 continue
+            # Aufteilen: echte geschlossene Trades vs. künstliche (Artificial)
+            type_col_exists = 'Type' in matched_trades.columns
+            status_col_exists = 'Status' in matched_trades.columns
+
+            # Echte geschlossene Trades (Standardfall)
+            real_closed_trades = matched_trades.copy()
+            if type_col_exists:
+                real_closed_trades = real_closed_trades[real_closed_trades['Type'].fillna('') != 'Artificial']
+            if status_col_exists:
+                before = len(real_closed_trades)
+                real_closed_trades = real_closed_trades[real_closed_trades['Status'].fillna('') == 'CLOSED']
+                after = len(real_closed_trades)
+                if before != after:
+                    print(f"   ✅ Status-Filter: {before - after} nicht-geschlossene Row(s) entfernt")
+
+            # Künstliche Trades: nur berücksichtigen, wenn Entry- und Exit-Datum am selben oder am nächsten Tag sind,
+            # und dann NUR den Opening-Trade (BUY) aufnehmen
+            artificial_same_day_opens = pd.DataFrame()
+            if type_col_exists:
+                artificial = matched_trades[matched_trades['Type'].fillna('') == 'Artificial'].copy()
+                if not artificial.empty:
+                    def _same_or_next_day(row):
+                        e_str = str(row.get('Entry Date', ''))
+                        x_str = str(row.get('Exit Date', ''))
+                        try:
+                            e_dt = pd.to_datetime(e_str) if e_str else pd.NaT
+                            x_dt = pd.to_datetime(x_str) if x_str else pd.NaT
+                            if pd.isna(e_dt) or pd.isna(x_dt):
+                                return False
+                            # Include if same day or next day (captures overnight artificial close)
+                            delta_days = (x_dt.date() - e_dt.date()).days
+                            return 0 <= delta_days <= 1
+                        except Exception:
+                            return False
+
+                    artificial_same_day_opens = artificial[artificial.apply(_same_or_next_day, axis=1)]
+                    if not artificial_same_day_opens.empty:
+                        print(f"   ➕ Artificial same/next-day Trades (nur OPEN) aufgenommen: {len(artificial_same_day_opens)}")
             
             # Hole aktuellen Preis
             current_price = get_real_bitpanda_price(symbol)
-            
-            # Verarbeite jeden Trade
-            for _, trade in matched_trades.iterrows():
+
+            # Verarbeite echte, geschlossene Trades (BUY/SELL nach Cutoff)
+            for _, trade in real_closed_trades.iterrows():
                 entry_date_str = str(trade.get('Entry Date', ''))
                 exit_date_str = str(trade.get('Exit Date', ''))
                 
@@ -102,7 +140,8 @@ def extract_trades_from_backtest_results():
                         'limit_price': entry_price * 0.999,  # Leicht unter Entry Price
                         'open_close': 'Open',
                         'action': 'BUY',
-                        'realtime_price': current_price
+                        'realtime_price': current_price,
+                        'artificial_included': False
                     }
                     all_trades.append(trade_entry)
                     print(f"     📈 BUY: {entry_date.date()}, {quantity:.6f} @ €{entry_price:.4f}")
@@ -121,10 +160,38 @@ def extract_trades_from_backtest_results():
                         'limit_price': exit_price * 1.001,  # Leicht über Exit Price
                         'open_close': 'Close',
                         'action': 'SELL',
-                        'realtime_price': current_price
+                        'realtime_price': current_price,
+                        'artificial_included': False
                     }
                     all_trades.append(trade_exit)
                     print(f"     💰 SELL: {exit_date.date()}, {quantity:.6f} @ €{exit_price:.4f}")
+
+            # Verarbeite künstliche same/next-day Trades: nur OPEN (BUY) aufnehmen, kein SELL
+            if not artificial_same_day_opens.empty:
+                for _, trade in artificial_same_day_opens.iterrows():
+                    entry_date_str = str(trade.get('Entry Date', ''))
+                    try:
+                        entry_date = pd.to_datetime(entry_date_str)
+                    except Exception:
+                        continue
+                    if entry_date >= cutoff_date:
+                        entry_price = float(trade.get('Entry Price', 0))
+                        quantity = float(trade.get('Quantity', 0))
+                        trade_entry = {
+                            'date': entry_date.strftime('%Y-%m-%d'),
+                            'ticker': ticker_name,
+                            'quantity': quantity,
+                            'price': entry_price,
+                            'order_type': 'Limit',
+                            'limit_price': entry_price * 0.999,
+                            'open_close': 'Open',
+                            'action': 'BUY',
+                            'realtime_price': current_price,
+                            # Markiere explizit, dass dieser Trade als Artificial (same/next-day) inkludiert wurde
+                            'artificial_included': True
+                        }
+                        all_trades.append(trade_entry)
+                        print(f"     🧩 Artificial BUY (same/next-day): {entry_date.date()}, {quantity:.6f} @ €{entry_price:.4f}")
                     
         except Exception as e:
             print(f"   ❌ Fehler bei {ticker_name}: {e}")
@@ -140,7 +207,7 @@ def extract_trades_from_backtest_results():
     print("-" * 150)
     
     for trade in all_trades:
-        line = f"{trade['date']};{trade['ticker']};{trade['quantity']:.6f};{trade['price']:.4f};{trade['order_type']};{trade['limit_price']:.4f};{trade['open_close']};{trade.get('action','')};{trade['realtime_price']:.4f}"
+        line = f"{trade['date']};{trade['ticker']};{trade['quantity']:.6f};{trade['price']:.4f};{trade['order_type']};{trade['limit_price']:.4f};{trade['open_close']};{trade.get('action','')};{trade['realtime_price']:.4f};{'Yes' if trade.get('artificial_included') else 'No'}"
         print(line)
     
     # Speichere als CSV
@@ -150,12 +217,12 @@ def extract_trades_from_backtest_results():
     if all_trades:
         df = pd.DataFrame(all_trades)
         # Spaltenreihenfolge erzwingen
-        cols = ['date','ticker','quantity','price','order_type','limit_price','open_close','action','realtime_price']
+        cols = ['date','ticker','quantity','price','order_type','limit_price','open_close','action','realtime_price','artificial_included']
         for c in cols:
             if c not in df.columns:
                 df[c] = ''
         df = df[cols]
-        df.columns = ['Date', 'Ticker', 'Quantity', 'Price', 'Order Type', 'Limit Price', 'Open/Close', 'Action', 'Realtime Price Bitpanda']
+        df.columns = ['Date', 'Ticker', 'Quantity', 'Price', 'Order Type', 'Limit Price', 'Open/Close', 'Action', 'Realtime Price Bitpanda', 'ArtificialIncluded']
         df.to_csv(csv_filename, sep=';', index=False)
         print(f"\n💾 Report gespeichert als: {csv_filename}")
         
