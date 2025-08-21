@@ -28,6 +28,50 @@ Ein robustes, produktionsreifes Python-Framework für Kryptowährungs-Backtestin
 - [Daten-Update (Yahoo + Bitpanda)](#daten-update-yahoo--bitpanda)
 - [Details: README_DATA_PIPELINE.md](README_DATA_PIPELINE.md)
 
+## 🆕 Recent Changes (2025-08-21)
+**Fusion Preview & Order Flow Updates**
+- `fusion_emergency_fixes.py` wieder ins Root verschoben (robuste Paar‑Umschaltung + MAX/BPS Hilfen)
+- `BitpandaFusion_trade.py` erhält einen sicheren Fallback, falls Fix‑Modul fehlt (kein Crash mehr)
+- Orchestrator (`live_backtest_WORKING.py`) erzeugt automatisch `trades_today.json` und startet danach (falls nicht mit `--skip-fusion`) die sichere Preview
+- Neues Skript `run_next_order.py` erlaubt schrittweisen / batchweisen Ablauf über eine manuell gepflegte `orders.json` mit Fortschritt in `orders_state.json`
+- Unterschied jetzt klar getrennt:
+    - `trades_today.json` = automatisch generierte Tages‑Orders (Pipeline Output)
+    - `orders.json` = manuelle / experimentelle Orderliste für inkrementelle Tests
+
+**Schnelle Beispiele**
+```powershell
+# Komplett orchestrierter Tageslauf + Fusion Preview
+python live_backtest_WORKING.py
+
+# Gleicher Lauf ohne Fusion Preview
+python live_backtest_WORKING.py --skip-fusion
+
+# Einzelnen nächsten manuellen Order-Eintrag aus orders.json vorbereiten
+python run_next_order.py
+
+# Drei nächste Orders verarbeiten
+python run_next_order.py -n 3
+
+# Von vorne beginnen und alle restlichen
+python run_next_order.py --from-start --all
+
+# State zurücksetzen (löscht internen Index) und erste Order neu
+python run_next_order.py --reset
+```
+
+**State Handling (`run_next_order.py`)**
+- Fortschritt wird in `orders_state.json` (`last_index`) gespeichert
+- Löschen oder `--reset` setzt den Index auf Anfang
+- Environment Variablen werden pro Order automatisch gesetzt: `FUSION_ONLY_PAIR`, `FUSION_ONLY_ACTION`, optional `FUSION_QTY`
+
+**Wann welches File?**
+| Use Case | Datei | Generator | Inhalt | Typischer Run |
+|----------|-------|-----------|--------|---------------|
+| Tägliche Pipeline Orders | `trades_today.json` | Orchestrator (`create_trades_today.py`) | Normalisierte Limit Orders (BUY Menge, SELL Max., BPS) | `python live_backtest_WORKING.py` |
+| Manuelle Tests / Sequenziell | `orders.json` | Manuell | Flexible Strategie + Mengen | `python run_next_order.py` |
+
+---
+
 > Start hier – Orchestrierter Tageslauf (Daten → 14‑Tage Report → trades_today.json → Fusion‑Preview)
 >
 > ```powershell
