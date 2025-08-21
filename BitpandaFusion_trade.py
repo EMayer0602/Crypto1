@@ -416,7 +416,7 @@ def main_loop():
     driver = attach_with_service(use_edge=False, port=9222)
     switch_to_tab_with_title(driver, "Fusion")
 
-    orders = _load_orders("orders.json")
+    orders = _load_orders("trades_today.json")
     if not orders:
         print("❌ Keine Orders gefunden.")
         return

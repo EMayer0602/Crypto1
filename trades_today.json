@@ -11,7 +11,7 @@
       "pair": "XRP-EUR",
       "action": "buy",
       "strategy": "Limit",
-      "amount": 4160.0,
+      "amount": 4170.0,
       "limit_price": "-25bps"
     }
   ]

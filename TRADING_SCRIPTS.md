@@ -15,7 +15,7 @@ Short, practical index of key scripts and what they do. All commands assume Powe
 - fusion_existing_all_trades_auto.py — Auto-fill Bitpanda Fusion form safely (manual final confirm)
   - Reads TODAY_ONLY_trades_*.csv; strict SELL protection; EUR-only pairs
   - Run: python fusion_existing_all_trades_auto.py
-  - Important envs: SELL_CONFIRM, DISABLE_SELLS, SELL_WHITELIST, STRICT_SELL_PRICE_PROTECT
+  - Important envs: SELL_CONFIRM, DISABLE_SELLS, STRICT_SELL_PRICE_PROTECT
 
 - trades_weekly_display.py — Newest-first weekly trade snapshot per ticker
   - Run: python trades_weekly_display.py

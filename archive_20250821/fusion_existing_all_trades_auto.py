@@ -60,9 +60,15 @@ TAB_NAV = _env_flag('TAB_NAV','FUSION_TAB_NAV','USE_TAB_NAV', default='1') in ('
 USE_MAX_BUTTON = _env_flag('USE_MAX_BUTTON','FUSION_USE_MAX', default='1') in ('1','true','True')
 USE_BPS_BUTTONS = _env_flag('USE_BPS_BUTTONS','FUSION_USE_BPS', default='1') in ('1','true','True')
 FORCE_MAX_BUTTON = _env_flag('FORCE_MAX_BUTTON','FUSION_FORCE_MAX_BUTTON', default='0') in ('1','true','True')  # MAX immer aktivieren
-SELL_BPS_OFFSET = _env_flag('SELL_BPS_OFFSET','FUSION_SELL_BPS_OFFSET', default='-10')  # SELL: -bps (unter Marktpreis)
+SELL_BPS_OFFSET = _env_flag('SELL_BPS_OFFSET','FUSION_SELL_BPS_OFFSET', default='25')   # SELL: +bps (über Marktpreis)
 PAPER_MODE = _env_flag('PAPER_MODE','FUSION_PAPER_MODE', default='0') in ('1','true','True')  # Paper: kein finaler Review Klick, Reset statt Absenden
 SAFE_PREVIEW_MODE = _env_flag('SAFE_PREVIEW_MODE','FUSION_SAFE_PREVIEW_MODE', default='0') in ('1','true','True')  # Nur anzeigen, niemals Review klicken
+# BUY-spezifisch: nach MAX eine kleine Gebühr-Reserve lassen (z.B. 25bps = 0,25%)
+APPLY_FEE_BUFFER_BUY = _env_flag('APPLY_FEE_BUFFER_BUY','FUSION_APPLY_FEE_BUFFER_BUY', default='0') in ('1','true','True')
+FEE_BUFFER_BPS = int(_env_flag('FEE_BUFFER_BPS','FUSION_FEE_BUFFER_BPS', default='25'))  # 25 bps = 0,25%
+FEE_BUFFER_PCT = float(_env_flag('FEE_BUFFER_PCT','FUSION_FEE_BUFFER_PCT', default='0'))  # optional direkte Prozentangabe überschreibt BPS
+# Optional: beim BUY nicht auf Asset (z.B. ETH) umschalten, um im QUOTE (z.B. USD) zu bleiben
+NO_BUY_TICKER_TOGGLE = _env_flag('NO_BUY_TICKER_TOGGLE','FUSION_NO_BUY_TICKER_TOGGLE', default='0') in ('1','true','True')
 # Ultimate safety/locks (from scripts)
 BLOCK_REVIEW = _env_flag('BLOCK_REVIEW','FUSION_BLOCK_REVIEW', default='0') in ('1','true','True')
 NO_SUBMIT = _env_flag('NO_SUBMIT','FUSION_NO_SUBMIT', default='0') in ('1','true','True')
@@ -113,10 +119,37 @@ for k,v in list(USER_OVERRIDES.items()):
 # --- Sicherheits-Flags gegen unbeabsichtigte Verkäufe ---
 DISABLE_SELLS = _env_flag('DISABLE_SELLS','FUSION_DISABLE_SELLS', default='0') in ('1','true','True')
 SELL_CONFIRM = _env_flag('SELL_CONFIRM','FUSION_SELL_CONFIRM', default='1') in ('1','true','True')  # standard: Schutz an
-SELL_WHITELIST = set([s.strip().upper() for s in _env_flag('SELL_WHITELIST','FUSION_SELL_WHITELIST', default='').split(',') if s.strip()])  # leere => kein Filter
 MAX_SELL_FRACTION = float(_env_flag('MAX_SELL_FRACTION','FUSION_MAX_SELL_FRACTION', default='1.0'))  # 1.0 = alles erlaubt
 STRICT_SELL_PRICE_PROTECT = float(_env_flag('STRICT_SELL_PRICE_PROTECT','FUSION_STRICT_SELL_PRICE_PROTECT', default='0'))  # z.B. 0.05 => Preis max 5% unter Markt
 STRICT_EUR_ONLY = _env_flag('STRICT_EUR_ONLY','FUSION_STRICT_EUR_ONLY', default='1') in ('1','true','True')  # Erzwinge ausschließlich *-EUR Paare
+STRICT_SCREENSHOT_MATCH = _env_flag('STRICT_SCREENSHOT_MATCH','FUSION_STRICT_SCREENSHOT_MATCH', default='1') in ('1','true','True')  # UI-Elemente wie im Screenshot vorhanden
+DISABLE_TICKER_WHITELIST = _env_flag('DISABLE_TICKER_WHITELIST','FUSION_DISABLE_TICKER_WHITELIST', default='0') in ('1','true','True')  # Deaktiviert Whitelist-Filter für Paare
+ENFORCE_PAIR_FIRST = _env_flag('ENFORCE_PAIR_FIRST','FUSION_ENFORCE_PAIR_FIRST', default='1') in ('1','true','True')  # Erzwinge: zuerst Ticker/Paar setzen
+SIDE_MISMATCH_ABORT = _env_flag('SIDE_MISMATCH_ABORT','FUSION_SIDE_MISMATCH_ABORT', default='0') in ('1','true','True')  # Strikt abbrechen, wenn Side nicht bestätigt werden kann
+
+# Erzwungene Seiten-Regeln und SELL-Blocklisten (über ENV)
+def _parse_force_side_rules() -> dict:
+    rules = (os.getenv('FUSION_FORCE_SIDE_RULES') or os.getenv('FORCE_SIDE_RULES') or '').strip()
+    mapping = {}
+    if not rules:
+        return mapping
+    for part in re.split(r'[;,\n\r]+', rules):
+        part = part.strip()
+        if not part or ':' not in part:
+            continue
+        pair, side = part.split(':', 1)
+        pair = pair.strip().upper()
+        side = side.strip().upper()
+        if side in ('BUY','SELL') and pair:
+            mapping[pair] = side
+    return mapping
+
+FORCE_SIDE_RULES = _parse_force_side_rules()
+DISABLE_SELL_PAIRS = set(p for p in re.split(r'[\s,;]+', (os.getenv('FUSION_DISABLE_SELL_PAIRS') or '')) if p)
+DISABLE_SELL_PAIRS = {p.strip().upper() for p in DISABLE_SELL_PAIRS}
+
+def _forced_side_for(pair: str):
+    return FORCE_SIDE_RULES.get((pair or '').upper())
 
 # Asset Rundungsregeln (kann bei Bedarf erweitert werden)
 ASSET_DECIMALS = {
@@ -333,6 +366,19 @@ class TradeLoader:
                 order_value = quantity * limit_price
                 pair = str(row['Ticker']).strip().replace('_','-')
 
+                # Erzwungene Seite per ENV-Regel (z.B. ETH-USD:BUY, XRP-EUR:SELL)
+                fside = _forced_side_for(pair)
+                if fside in ('BUY','SELL') and action != fside:
+                    if DEBUG_MODE or True:
+                        print(f"   🔒 Override Aktion {action} → {fside} für {pair} (FORCE_SIDE_RULES)")
+                    action = fside
+
+                # SELL für bestimmte Paare komplett blockieren (z.B. ETH-USD)
+                if action == 'SELL' and pair.upper() in DISABLE_SELL_PAIRS:
+                    if LOG_SKIPPED_TRADES or True:
+                        print(f"   ⏭️ Skip SELL {pair} (DISABLE_SELL_PAIRS aktiv)")
+                    continue
+
                 # Optionaler Schutz gegen USD-Paare
                 if STRICT_EUR_ONLY and ('USD' in pair.upper()):
                     skip_stats['not_eur'] += 1
@@ -364,17 +410,17 @@ class TradeLoader:
                         continue
 
                 # Ticker-Whitelist (falls vorhanden)
-                if allowed_pairs and pair.upper() not in allowed_pairs:
+                if allowed_pairs and pair.upper() not in allowed_pairs and not DISABLE_TICKER_WHITELIST:
                     skip_stats['not_allowed'] += 1
                     if LOG_SKIPPED_TRADES or DUMP_FILTER_DEBUG:
                         print(f"   ⏭️ Skip {pair} (nicht in erlaubten Ticker-Liste) -> {row.to_dict()}")
                     continue
 
-                # Nur *-EUR Paare ausführen
-                if not pair.upper().endswith('-EUR'):
+                # Nur *-EUR Paare ausführen, falls strikt gefordert
+                if STRICT_EUR_ONLY and not pair.upper().endswith('-EUR'):
                     skip_stats['not_eur'] += 1
                     if LOG_SKIPPED_TRADES or DUMP_FILTER_DEBUG:
-                        print(f"   ⏭️ Skip {pair} (Nicht -EUR / möglicher Fehl-Ticker) -> {row.to_dict()}")
+                        print(f"   ⏭️ Skip {pair} (Nicht -EUR / STRICHT_EUR_ONLY aktiv) -> {row.to_dict()}")
                     continue
 
                 trade = {
@@ -1439,7 +1485,7 @@ class FusionExistingAutomation:
             except Exception:
                 pass
             # For BUY, first click the asset ticker/pill
-            if action == 'BUY' and base:
+            if action == 'BUY' and base and not NO_BUY_TICKER_TOGGLE:
                 if self._click_asset_ticker_toggle(base):
                     changed=True
             # Then always click MAX
@@ -1452,6 +1498,32 @@ class FusionExistingAutomation:
             ]
             if self._try_click_selectors(max_selectors, 'MAX Button (simple)', required=False):
                 changed=True
+                # verify quantity got set; if not, try 100%
+                try:
+                    def parse_qty():
+                        for xp in [
+                            "//input[contains(@placeholder,'Menge') or contains(@placeholder,'Anzahl') or contains(@placeholder,'Amount') or contains(@placeholder,'Quant')]",
+                            "//*[@role='spinbutton']",
+                        ]:
+                            for el in self.driver.find_elements(By.XPATH, xp):
+                                if not el.is_displayed():
+                                    continue
+                                raw=(el.get_attribute('value') or el.text or '').replace(',', '.');
+                                m=re.search(r"(\d+\.?\d*)", raw)
+                                if m:
+                                    v=float(m.group(1))
+                                    if v>0:
+                                        return v
+                        return None
+                    if not parse_qty():
+                        pct_100 = [
+                            "//button[normalize-space()='100%']",
+                            "//*[self::button or @role='button'][contains(normalize-space(.),'100%')]",
+                        ]
+                        if self._try_click_selectors(pct_100, '100% Button (simple fallback)', required=False):
+                            changed=True
+                except Exception:
+                    pass
             else:
                 try:
                     js = """
@@ -1498,6 +1570,319 @@ class FusionExistingAutomation:
         except Exception:
             pass
         return False
+
+    # --- Deterministic helpers -------------------------------------------------
+    def _open_pair_search_and_type(self, base: str, quote: str = 'EUR') -> bool:
+        """Deterministically open the pair selector, type the base symbol, and select base-quote.
+        Returns True if the desired pair appears selected."""
+        try:
+            base = (base or '').upper(); quote=(quote or 'EUR').upper()
+            # 1) Open pair widget
+            triggers = [
+                "//button[contains(@class,'pair') or contains(@class,'asset')]",
+                "//div[contains(@class,'pair')][@role='button']",
+                "//div[contains(@class,'asset-selector')]",
+                "//*[contains(@aria-label,'Pair') or contains(@aria-label,'Handelspaar') or contains(.,'EUR')][self::button or @role='button']",
+                # Button/Chevron next to current pair header
+                "//*[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'-EUR')]/following::button[1]",
+                "//header//*[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'-EUR')]/ancestor::*[self::div or self::header][1]//button[1]",
+            ]
+            self._try_click_selectors(triggers, 'Ticker/Pair öffnen', required=False)
+            # Shadow-DOM-aware JS fallback to open a pair-like button/header if present
+            try:
+                js_open = r"""
+                    (function(){
+                        function roots(){ const r=[document]; try{ document.querySelectorAll('*').forEach(e=>{ if(e.shadowRoot) r.push(e.shadowRoot); }); }catch(e){} return r; }
+                        function vis(e){ try{const b=e.getBoundingClientRect(); return b.width>6 && b.height>6 && e.offsetParent;}catch(e){return !!e} }
+                        const rx = /[A-Z]{2,6}\s*[-\/]\s*(EUR|USDT|USD)/;
+                        for(const root of roots()){
+                            const nodes=[...root.querySelectorAll('button,[role="button"],div,span')];
+                            const cand = nodes.find(n=>vis(n) && rx.test((n.innerText||'').trim().toUpperCase()));
+                            if(cand){ try{ cand.click(); return true; }catch(e){ try{ cand.dispatchEvent(new Event('click',{bubbles:true})); return true; }catch(_){} } }
+                        }
+                        return false;
+                    })();
+                """
+                self.driver.execute_script(js_open)
+            except Exception:
+                pass
+            time.sleep(0.15)
+            # 2) Find a search/combobox input
+            inputs = [
+                "//input[@type='search']",
+                "//input[contains(@placeholder,'Suche') or contains(@placeholder,'Search')]",
+                "//*[@role='combobox']",
+                "//input[starts-with(@id,'downshift-')]",
+                "//input[@aria-autocomplete='list']",
+                "//*[@role='combobox']//input",
+                "//div[contains(@class,'search')]//input",
+            ]
+            field=None
+            for xp in inputs:
+                try:
+                    cand = self.driver.find_element(By.XPATH, xp)
+                    if cand.is_displayed():
+                        field=cand; break
+                except Exception:
+                    continue
+            if not field:
+                return False
+            try:
+                field.click();
+            except Exception:
+                pass
+            try:
+                field.clear()
+            except Exception:
+                pass
+            # 3) Type base, wait, then choose row with base and quote
+            try:
+                field.send_keys(Keys.CONTROL, 'a'); field.send_keys(base)
+            except Exception:
+                self.js_fill(field, base)
+            time.sleep(0.35)
+            rows = [
+                f"//tr[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}'] and .//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{quote}']]",
+                f"//li[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}'] and .//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{quote}']]",
+                f"//*[self::div or self::li or self::tr][.//*[contains(.,'{base}')]][.//*[contains(.,'{quote}')]]",
+            ]
+            if self._try_click_selectors(rows, f'Wähle {base}-{quote}', required=False):
+                time.sleep(0.2)
+            else:
+                # Try full pair string, then slash variant
+                try:
+                    field.send_keys(Keys.CONTROL, 'a'); field.send_keys(f"{base}-{quote}"); time.sleep(0.35)
+                except Exception:
+                    try:
+                        self.js_fill(field, f"{base}-{quote}")
+                    except Exception:
+                        pass
+                exact_pair_rows = [
+                    f"//tr[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}-{quote}']]",
+                    f"//li[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}-{quote}']]",
+                    f"//*[self::div or self::li or self::tr][translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}-{quote}']",
+                ]
+                if not self._try_click_selectors(exact_pair_rows, f'Exaktes Paar {base}-{quote}', required=False):
+                    try:
+                        field.send_keys(Keys.CONTROL, 'a'); field.send_keys(f"{base}/{quote}"); time.sleep(0.35)
+                    except Exception:
+                        try:
+                            self.js_fill(field, f"{base}/{quote}")
+                        except Exception:
+                            pass
+                    slash_rows = [
+                        f"//tr[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}/{quote}']]",
+                        f"//li[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}/{quote}']]",
+                        f"//*[self::div or self::li or self::tr][translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}/{quote}']",
+                    ]
+                    self._try_click_selectors(slash_rows, f'Exaktes Paar {base}/{quote}', required=False)
+                # As last try, press ENTER to accept top suggestion
+                try:
+                    field.send_keys(Keys.ENTER); time.sleep(0.2)
+                except Exception:
+                    pass
+            # 4) Verify
+            cur=(self.get_current_pair() or '').upper()
+            return cur == f"{base}-{quote}"
+        except Exception:
+            return False
+
+    def ensure_pair_typed_and_verified(self, trade, retries: int = 2) -> bool:
+        """Ticker FIRST: Click pair field, type base, ENTER/row, verify exact '<BASE>-EUR'.
+        Returns True only if UI shows the intended pair. Retries typing, then falls back to select_pair/force.
+        """
+        try:
+            target = (trade.get('pair') or '').upper()
+            if not target or '-' not in target:
+                return False
+            base, quote = target.split('-', 1)
+            quote = (quote or 'EUR').upper()
+            # Fast path: if already correct, done
+            cur = (self.get_current_pair() or '').upper()
+            if cur == target:
+                return True
+            # Ensure correct iframe/context before interacting
+            try:
+                self.switch_into_relevant_iframe()
+            except Exception:
+                pass
+            # Try deterministic typing a few times
+            for _ in range(max(1, int(retries))):
+                if self._open_pair_search_and_type(base, quote):
+                    cur = (self.get_current_pair() or '').upper()
+                    if cur == target:
+                        return True
+                time.sleep(0.2)
+            # Fallbacks
+            try:
+                self.select_pair(trade); time.sleep(0.3)
+                cur = (self.get_current_pair() or '').upper()
+                if cur == target:
+                    return True
+            except Exception:
+                pass
+            try:
+                if self._force_pair_switch(base, target):
+                    time.sleep(0.3)
+                    cur = (self.get_current_pair() or '').upper()
+                    if cur == target:
+                        return True
+            except Exception:
+                pass
+            # Ensure EUR quote if base matches but quote is wrong
+            try:
+                cur = (self.get_current_pair() or '').upper()
+                if cur.startswith(base) and not cur.endswith(f'-{quote}'):
+                    if self.ensure_quote_currency(quote):
+                        time.sleep(0.2)
+                        cur = (self.get_current_pair() or '').upper()
+                        if cur == target:
+                            return True
+            except Exception:
+                pass
+            return False
+        except Exception:
+            return False
+
+    def verify_ui_matches_screenshot(self, trade) -> bool:
+        """Verifies presence of key controls as shown in the provided screenshot.
+        Checks: strategy combobox showing 'Limit', Anzahl block with percent buttons and 'Max.' button, Limitpreis input, ±bps buttons, and bottom action buttons.
+        """
+        try:
+            checks = []
+            # Strategy 'Limit' visible
+            try:
+                sel = "//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'strategie')]/following::*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'limit')][1]"
+                els = self.driver.find_elements(By.XPATH, sel)
+                checks.append(any(e.is_displayed() for e in els))
+            except Exception:
+                checks.append(False)
+            # Anzahl percent buttons and Max./Max
+            try:
+                pct_labels = ['10%','25%','50%','75%']
+                pct_ok = True
+                for lab in pct_labels:
+                    try:
+                        xp = f"//button[normalize-space()='{lab}']"
+                        if not any(e.is_displayed() for e in self.driver.find_elements(By.XPATH, xp)):
+                            pct_ok = False; break
+                    except Exception:
+                        pct_ok = False; break
+                max_ok = any(e.is_displayed() for e in self.driver.find_elements(By.XPATH, "//button[normalize-space()='Max.' or normalize-space()='Max' or normalize-space()='MAX']"))
+                checks.append(pct_ok and max_ok)
+            except Exception:
+                checks.append(False)
+            # Limitpreis field and EUR suffix
+            try:
+                price_field_ok = any(e.is_displayed() for e in self.driver.find_elements(By.XPATH, "//input[contains(@placeholder,'Limit') or contains(@placeholder,'Preis') or @id='LimitPrice' or contains(@id,'LimitPrice')]"))
+                eur_suffix_ok = any(e.is_displayed() for e in self.driver.find_elements(By.XPATH, "//*[normalize-space()='EUR' and string-length(normalize-space())=3]") )
+                checks.append(price_field_ok and eur_suffix_ok)
+            except Exception:
+                checks.append(False)
+            # ±bps buttons present
+            try:
+                bps_labels = ['-25bps','-10bps','+10bps','+25bps']
+                bps_ok = True
+                for b in bps_labels:
+                    xp = f"//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'{b.lower()}')]"
+                    if not any(e.is_displayed() for e in self.driver.find_elements(By.XPATH, xp)):
+                        bps_ok = False; break
+                checks.append(bps_ok)
+            except Exception:
+                checks.append(False)
+            # Bottom action buttons: Zurücksetzen and action-specific localized label
+            try:
+                reset_ok = any(e.is_displayed() for e in self.driver.find_elements(By.XPATH, "//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'zurücksetzen') or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'reset')]") )
+                base = (trade.get('pair','').split('-')[0] or trade.get('crypto','')).upper()
+                action_upper = (trade.get('action','BUY').upper())
+                action_ok = True
+                if action_upper == 'SELL':
+                    # e.g., 'SOL verkaufen'
+                    xp = f"//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'verkaufen') and contains(.,'{base}') ]"
+                    action_ok = any(e.is_displayed() for e in self.driver.find_elements(By.XPATH, xp))
+                else:
+                    # BUY e.g., 'ADA kaufen'
+                    xp = f"//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'kaufen') and contains(.,'{base}') ]"
+                    action_ok = any(e.is_displayed() for e in self.driver.find_elements(By.XPATH, xp))
+                checks.append(reset_ok and action_ok)
+            except Exception:
+                checks.append(False)
+            return all(checks)
+        except Exception:
+            return False
+
+    def _set_limit_price_only(self, price: float) -> bool:
+        """Find and set only the limit price field without touching quantity."""
+        try:
+            price_field = self._find_price_field_direct() or (self._identify_order_fields() or {}).get('price')
+            if not price_field:
+                return False
+            try:
+                price_field.click(); price_field.clear()
+            except Exception:
+                pass
+            if self._set_element_value(price_field, price):
+                if DEBUG_MODE:
+                    print('   ✅ Limit Preis gesetzt (deterministisch)')
+                return True
+        except Exception:
+            pass
+        return False
+
+    def run_deterministic_sequence(self, trade) -> bool:
+        """Strict order: click ticker, type symbol, select side, choose Limit and set limit, click Anzahl then MAX, then ±25bps."""
+        changed=False
+        base = (trade.get('pair','').split('-')[0] or trade.get('crypto','')).upper()
+        quote = 'EUR'
+        # 1) Ticker: open field and type symbol
+        if base:
+            if not self._open_pair_search_and_type(base, quote):
+                if DEBUG_MODE:
+                    print('   ⚠️ Ticker Auswahl via Suche fehlgeschlagen – Fallback select_pair')
+                self.select_pair(trade)
+        # 2) Buy/Sell
+        try:
+            self.ensure_side(trade.get('action','BUY'))
+        except Exception:
+            pass
+        # 3) Strategy = Limit
+        try:
+            if not self.ensure_strategy_limit_js():
+                if not self.ensure_limit_strategy_with_search():
+                    self.ensure_limit_strategy()
+        except Exception:
+            pass
+        # 4) Type Limit price
+        try:
+            lp = float(trade.get('limit_price')) if trade.get('limit_price') is not None else None
+        except Exception:
+            lp = None
+        if lp:
+            self._set_limit_price_only(lp)
+        # 5) Click Anzahl then MAX
+        try:
+            self.ensure_qty_mode_is_selected()
+        except Exception:
+            pass
+        try:
+            # Click MAX (once is enough; verify handled elsewhere)
+            self.apply_ticker_and_max_simple(trade)
+            changed=True
+        except Exception:
+            pass
+        # 6) Apply ±25bps only (disable MAX during this step)
+        prev_use_max = None
+        try:
+            prev_use_max = globals().get('USE_MAX_BUTTON')
+            globals()['USE_MAX_BUTTON'] = False
+            if self.apply_max_and_bps_buttons(trade):
+                changed=True
+        except Exception:
+            pass
+        finally:
+            if prev_use_max is not None:
+                globals()['USE_MAX_BUTTON'] = prev_use_max
+        return changed
 
     def navigate_via_tab_sequence(self, trade):
         """Versucht strikt via TAB Reihenfolge zu navigieren wie vom Nutzer beschrieben.
@@ -1612,6 +1997,161 @@ class FusionExistingAutomation:
             # 3 TABs bis Strategie (combobox / Market / Limit)
             for _ in range(8):
                 if self._is_active_strategy():
+
+                    # ---- Analyse & Smart-Fill des Trade-Fensters ---------------------------
+                    def analyze_trade_window(self) -> dict:
+                        """Analysiert das aktuell sichtbare Trade-Fenster.
+                        Rückgabe enthält u.a.: pair, side, limit_active, has_qty, has_price, has_max, has_bps_plus, has_bps_minus.
+                        Klickt nichts – rein lesend."""
+                        info = {
+                            'pair': None,
+                            'side': None,
+                            'limit_active': False,
+                            'has_qty': False,
+                            'has_price': False,
+                            'has_max': False,
+                            'has_bps_plus': False,
+                            'has_bps_minus': False,
+                        }
+                        # Pair
+                        try:
+                            info['pair'] = (self.get_current_pair() or '').upper()
+                        except Exception:
+                            info['pair'] = None
+                        # Side
+                        try:
+                            if getattr(self, '_is_side_active', None):
+                                if self._is_side_active('BUY'):
+                                    info['side'] = 'BUY'
+                                elif self._is_side_active('SELL'):
+                                    info['side'] = 'SELL'
+                        except Exception:
+                            pass
+                        # Fields
+                        try:
+                            fields = {}
+                            try:
+                                fields = self._identify_order_fields() or {}
+                            except Exception:
+                                fields = {}
+                            if fields.get('qty'):
+                                try:
+                                    info['has_qty'] = fields['qty'].is_displayed()
+                                except Exception:
+                                    info['has_qty'] = True
+                            price_direct = None
+                            try:
+                                price_direct = self._find_price_field_direct()
+                            except Exception:
+                                price_direct = None
+                            if price_direct is None:
+                                price_direct = fields.get('price')
+                            if price_direct is not None:
+                                try:
+                                    info['has_price'] = price_direct.is_displayed()
+                                except Exception:
+                                    info['has_price'] = True
+                                info['limit_active'] = True
+                        except Exception:
+                            pass
+                        # Buttons: MAX & BPS
+                        try:
+                            # MAX
+                            max_candidates = []
+                            for xp in [
+                                "//button[normalize-space()='Max']",
+                                "//button[normalize-space()='MAX']",
+                                "//*[self::button or @role='button'][contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'max')]",
+                            ]:
+                                try:
+                                    max_candidates.extend([e for e in self.driver.find_elements(By.XPATH, xp) if e.is_displayed()])
+                                except Exception:
+                                    continue
+                            if max_candidates:
+                                info['has_max'] = True
+                            # BPS
+                            bps_texts = []
+                            try:
+                                btns = self.driver.find_elements(By.XPATH, "//button|//*[@role='button']")
+                                for b in btns:
+                                    try:
+                                        if not b.is_displayed():
+                                            continue
+                                        t = (b.text or '').strip().lower().replace('\u2212','-')
+                                        if 'bps' in t and any(ch in t for ch in ['+','-','−']):
+                                            bps_texts.append(t)
+                                    except Exception:
+                                        continue
+                            except Exception:
+                                pass
+                            info['has_bps_plus'] = any(('+25bps' in t) or ('+ 25bps' in t) or ('+25 bps' in t) for t in bps_texts)
+                            info['has_bps_minus'] = any(('-25bps' in t) or ('−25bps' in t) or ('- 25bps' in t) or ('-25 bps' in t) for t in bps_texts)
+                        except Exception:
+                            pass
+                        if DEBUG_MODE:
+                            print(f"   🧪 Analyse: {info}")
+                        return info
+
+                    def smart_fill_trade_window(self, trade, analysis: dict | None = None) -> bool:
+                        """Füllt das Trade-Fenster anhand einer Analyse robust aus.
+                        Schritte: Paar prüfen -> Side -> Limit aktivieren -> Menge/Preis via MAX/BPS oder Tippen.
+                        Gibt True zurück, wenn etwas gesetzt/geändert wurde."""
+                        changed = False
+                        analysis = analysis or self.analyze_trade_window()
+                        target_pair = (trade.get('pair') or '').upper()
+                        # 1) Pair
+                        try:
+                            if analysis.get('pair') != target_pair and target_pair:
+                                self.select_pair(trade)
+                                time.sleep(0.3)
+                                analysis['pair'] = (self.get_current_pair() or '').upper()
+                        except Exception:
+                            pass
+                        # 2) Side
+                        try:
+                            if (analysis.get('side') or '').upper() != (trade.get('action') or 'BUY').upper():
+                                self.ensure_side(trade.get('action','BUY'))
+                                time.sleep(0.2)
+                                # refresh side knowledge
+                                if getattr(self, '_is_side_active', None):
+                                    analysis['side'] = 'BUY' if self._is_side_active('BUY') else ('SELL' if self._is_side_active('SELL') else None)
+                        except Exception:
+                            pass
+                        # 3) Strategy = Limit
+                        try:
+                            if not analysis.get('limit_active'):
+                                if not self.ensure_strategy_limit_js():
+                                    if not self.ensure_limit_strategy_with_search():
+                                        self.ensure_limit_strategy()
+                                time.sleep(0.2)
+                                # re-check
+                                pf = self._find_price_field_direct()
+                                analysis['limit_active'] = bool(pf)
+                        except Exception:
+                            pass
+                        # 4) Prefer helper buttons if available, else type
+                        try:
+                            used_buttons = False
+                            if not BACKTEST_MODE:
+                                if analysis.get('has_max') or analysis.get('has_bps_plus') or analysis.get('has_bps_minus'):
+                                    if self.apply_max_and_bps_buttons(trade):
+                                        changed = True
+                                        used_buttons = True
+                            # If buttons not effective, type fields directly
+                            if not used_buttons:
+                                self.fill_quantity_and_price(trade)
+                                changed = True
+                        except Exception:
+                            pass
+                        return changed
+
+                    def auto_analyze_and_fill(self, trade) -> bool:
+                        """Komfort-Orchestrierung: analysieren und smart füllen. True bei Erfolg/Änderung."""
+                        try:
+                            analysis = self.analyze_trade_window()
+                            return self.smart_fill_trade_window(trade, analysis)
+                        except Exception:
+                            return False
                     # Tippe 'limit'
                     self._try_type('limit'); time.sleep(0.25)
                     try:
@@ -2043,18 +2583,17 @@ class FusionExistingAutomation:
         base = trade['crypto'].upper()
         print(f'📌 Wähle Paar {target_pair} ...')
         
-        # Import der gezielten UI-Fixes
+        # Import der gezielten UI-Fixes (dynamisches Ziel-Paar)
         try:
             import sys, os
             sys.path.append(os.path.dirname(__file__))
-            from fusion_ui_fixes import fix_pair_selection_soleur
-            
-            if target_pair == 'SOL-EUR':
-                if fix_pair_selection_soleur(self.driver, debug=DEBUG_MODE):
-                    print('   ✅ SOL-EUR via gezielte Funktion gewählt')
-                    return
-                else:
-                    print('   ⚠️ Gezielte SOL-EUR Auswahl fehlgeschlagen - Fallback')
+            from fusion_emergency_fixes import fix_pair_selection_target
+            if fix_pair_selection_target(self.driver, target_pair, debug=DEBUG_MODE):
+                print('   ✅ Paar via gezielte Funktion gewählt')
+                return
+            else:
+                if DEBUG_MODE:
+                    print('   ⚠️ Gezielte Paar-Auswahl fehlgeschlagen - Fallback')
         except Exception as e:
             if DEBUG_MODE:
                 print(f'   ⚠️ UI-Fix Import Fehler: {e}')
@@ -2074,6 +2613,11 @@ class FusionExistingAutomation:
             f"//span[translate(normalize-space(text()),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair}']",
             f"//div[translate(normalize-space(text()),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair}']",
             f"//button[.//span[translate(normalize-space(text()),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair}']]",
+            f"//*[self::button or self::div or self::span][contains(translate(normalize-space(.), 'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'), '{target_pair}')]",
+            # slash variant SOL/EUR
+            f"//span[translate(normalize-space(text()),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair.replace('-', '/')}']",
+            f"//div[translate(normalize-space(text()),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair.replace('-', '/')}']",
+            f"//*[self::button or self::div or self::span][contains(translate(normalize-space(.), 'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'), '{target_pair.replace('-', '/')}')]",
         ]
         if self._try_click_selectors(direct_pair_selectors, 'Direktes Paar', required=False):
             time.sleep(0.2)
@@ -2148,15 +2692,26 @@ class FusionExistingAutomation:
                 f"//tr[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair}']]",
                 f"//li[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair}']]",
                 f"//div[contains(@class,'list')]//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair}']",
+                # slash variant exact hits
+                f"//tr[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair.replace('-', '/')}']]",
+                f"//li[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair.replace('-', '/')}']]",
+                f"//div[contains(@class,'list')]//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair.replace('-', '/')}']",
                 # Fallback by base + EUR appearing in same row/item
                 f"//tr[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}'] and .//*[contains(.,'EUR')]]",
                 f"//li[.//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}'] and .//*[contains(.,'EUR')]]",
                 f"//div[contains(@class,'list')]//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{base}']/ancestor::*[self::tr or self::li or self::div][.//*[contains(.,'EUR')]]",
                 # Last resort: any visible element with the full pair text
                 f"//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair}']",
+                f"//*[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{target_pair.replace('-', '/')}']",
             ]
             self._try_click_selectors(result_row_selectors, f'Suchergebnis {base}', required=False)
             time.sleep(0.25)
+            try:
+                if (self.get_current_pair() or '').upper() == target_pair:
+                    print('   ✅ Paar gewechselt (Suche)')
+                    return
+            except Exception:
+                pass
         # 6. Fallback: erneut direkt nach BASE Symbol suchen (ohne Suchfeld)
         if self.get_current_pair() != target_pair:
             base_direct = [
@@ -2773,10 +3328,12 @@ class FusionExistingAutomation:
             except Exception:
                 pass
             return None
-        # 1. Max Button - AGGRESSIVER für echten MAX (nicht 75%) - IMMER wenn FORCE_MAX_BUTTON
+        # 1. Max Button - robust including shadow DOM and verification
         if USE_MAX_BUTTON or FORCE_MAX_BUTTON:
+            clicked_max = False
+            v = None
             try:
-                # GEZIELTE MAX BUTTON LÖSUNG
+                # Targeted fix first
                 try:
                     from fusion_ui_fixes import fix_max_button
                     if fix_max_button(self.driver, debug=DEBUG_MODE):
@@ -2786,63 +3343,62 @@ class FusionExistingAutomation:
                         if DEBUG_MODE:
                             print(f'   ✅ MAX via gezielte Funktion (FORCE={FORCE_MAX_BUTTON})')
                     else:
-                        clicked_max = False
                         if DEBUG_MODE:
                             print(f'   ⚠️ Gezielte MAX Funktion fehlgeschlagen - Fallback (FORCE={FORCE_MAX_BUTTON})')
                 except Exception as e:
                     if DEBUG_MODE:
                         print(f'   ⚠️ MAX UI-Fix Fehler: {e}')
-                    clicked_max = False
-                
-                # Fallback auf ursprüngliche Logik falls gezielte MAX fehlschlägt
+                # Fallback: respect SELL-only if configured
                 if not clicked_max:
-                    # If configured: only apply MAX on SELL
                     if USE_MAX_SELL_ONLY and trade.get('action','BUY').upper() != 'SELL':
                         clicked_max = False
                     else:
-                        # NEUE STRATEGIE: Erst "Anzahl" Mode sicherstellen, dann MAX
+                        # Ensure Anzahl mode then click MAX
                         try:
                             anzahl_selectors = [
                                 "//button[normalize-space()='Anzahl']",
                                 "//*[@role='tab' and normalize-space()='Anzahl']",
                                 "//*[contains(@class,'tab') and normalize-space()='Anzahl']",
                             ]
-                            if self._try_click_selectors(anzahl_selectors, 'Anzahl Mode', required=False):
-                                time.sleep(0.3)
-                                if DEBUG_MODE:
-                                    print('   🎯 Anzahl-Modus aktiviert')
+                            self._try_click_selectors(anzahl_selectors, 'Anzahl Mode', required=False)
                         except Exception:
                             pass
-                        
-                        # Dann MAX klicken - erweiterte Selektoren
                         max_selectors = [
                             "//button[normalize-space()='Max' and not(contains(@class,'disabled'))]",
-                            "//button[normalize-space()='MAX' and not(contains(@class,'disabled'))]", 
+                            "//button[normalize-space()='MAX' and not(contains(@class,'disabled'))]",
+                            "//button[normalize-space()='Max.' and not(contains(@class,'disabled'))]",
                             "//button[contains(@class,'max') and not(contains(@class,'disabled'))]",
                             "//*[self::button and normalize-space()='Max']",
+                            "//*[self::button and normalize-space()='Max.']",
                             "//*[@role='button' and normalize-space()='Max']",
+                            "//*[@role='button' and normalize-space()='Max.']",
                             "//*[@data-testid='max-button']",
                             "//*[contains(@aria-label,'Max') or contains(@aria-label,'Maximum')]",
                         ]
                         clicked_max = self._try_click_selectors(max_selectors, 'MAX Button', required=False)
-                        
-                        # Falls immer noch nicht: JS Scan für Max Button der NICHT disabled ist
                         if not clicked_max:
+                            # Shadow DOM aware search
+                            js = r"""
+                                (function(){
+                                  function roots(){
+                                    const r=[document];
+                                    try{document.querySelectorAll('*').forEach(e=>{if(e.shadowRoot) r.push(e.shadowRoot);});}catch(e){}
+                                    return r;
+                                  }
+                                  function vis(e){try{const b=e.getBoundingClientRect();return b.width>3&&b.height>3&&e.offsetParent;}catch(e){return !!e}
+                                  }
+                                  for(const root of roots()){
+                                    const nodes=[...root.querySelectorAll('button,[role="button"]')];
+                                    const cand=nodes.find(n=>vis(n)&&((n.innerText||'').trim().toLowerCase()==='max' || (n.className||'').toLowerCase().includes('max')) && !n.disabled && !n.classList.contains('disabled'));
+                                    if(cand){ try{cand.click(); return true;}catch(e){}}
+                                  }
+                                  return false;
+                                })();
+                            """
                             try:
-                                js_max = """
-                                    const isVisible = (e)=>!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);
-                                    const nodes = Array.from(document.querySelectorAll('button, [role="button"]'));
-                                    const target = nodes.find(n=>
-                                        isVisible(n) && 
-                                        (n.innerText||'').trim().toLowerCase()==='max' &&
-                                        !n.disabled &&
-                                        !n.classList.contains('disabled')
-                                    );
-                                    if(target){ target.click(); return true;} return false;
-                                """
-                                clicked_max = bool(self.driver.execute_script(js_max))
+                                clicked_max = bool(self.driver.execute_script(js))
                                 if clicked_max and DEBUG_MODE:
-                                    print('   ✅ MAX via JS gefunden')
+                                    print('   ✅ MAX via Shadow DOM JS gefunden')
                             except Exception:
                                 clicked_max = False
                 if clicked_max:
@@ -2850,16 +3406,79 @@ class FusionExistingAutomation:
                     time.sleep(0.25)
                     v = _read_qty_value()
                     if v is None or v <= 0:
-                        # Retry MAX once more
                         if DEBUG_MODE:
                             print('   🔁 MAX erneut versuchen')
-                        self._try_click_selectors(max_selectors, 'MAX Button (retry)', required=False)
+                        try:
+                            self._try_click_selectors(["//button[normalize-space()='Max']","//button[normalize-space()='MAX']"], 'MAX Button (retry)', required=False)
+                        except Exception:
+                            pass
                         time.sleep(0.25)
                         v = _read_qty_value()
                 if (v is not None and v > 0):
+                    # Optional: BUY Gebühr-Puffer anwenden (z.B. 25bps => 0,25% weniger als MAX)
+                    try:
+                        if (trade.get('action','BUY').upper() == 'BUY') and APPLY_FEE_BUFFER_BUY:
+                            # Faktor berechnen; FEE_BUFFER_PCT überschreibt BPS falls gesetzt (>0)
+                            if FEE_BUFFER_PCT and FEE_BUFFER_PCT > 0:
+                                factor = max(0.0, 1.0 - (float(FEE_BUFFER_PCT)/100.0))
+                            else:
+                                factor = max(0.0, 1.0 - (float(FEE_BUFFER_BPS)/10000.0))
+                            new_val = v * factor
+                            # Rundung abhängig von aktiver Einheit (USD -> 2 Nachkommastellen, sonst Asset-Decimals)
+                            decimals = 2
+                            try:
+                                base_sym = (trade.get('pair','').split('-')[0] or '').upper()
+                                decimals = ASSET_DECIMALS.get(base_sym, 6)
+                                # Versuche zu erkennen, ob USD-Einheit aktiv ist (Toggle/Tab ausgewählt)
+                                js_unit = r"""
+                                    (function(){
+                                      function vis(e){try{const r=e.getBoundingClientRect();return r.width>6&&r.height>6&&e.offsetParent;}catch(_){return false}}
+                                      const nodes=Array.from(document.querySelectorAll('*'));
+                                      const cand=nodes.find(n=>vis(n) && ((n.innerText||'').trim().toUpperCase()==='USD'));
+                                      if(!cand) return '';
+                                      const cls=(cand.className||'').toLowerCase();
+                                      const sel=(cand.getAttribute && (cand.getAttribute('aria-selected')==='true' || cand.getAttribute('aria-pressed')==='true'));
+                                      if(sel || cls.includes('active') || cls.includes('selected')) return 'USD';
+                                      return '';
+                                    })();
+                                """
+                                active_unit = ''
+                                try:
+                                    active_unit = self.driver.execute_script(js_unit) or ''
+                                except Exception:
+                                    active_unit = ''
+                                if isinstance(active_unit, str) and active_unit.strip().upper() == 'USD':
+                                    decimals = 2
+                            except Exception:
+                                pass
+                            try:
+                                q = Decimal(str(new_val)).quantize(Decimal('1.' + ('0'*max(0, int(decimals)))), rounding=ROUND_DOWN)
+                                new_val_rounded = float(q)
+                            except Exception:
+                                new_val_rounded = float(f"{new_val:.{max(0,int(decimals))}f}")
+                            # Setze den neuen Wert ins Mengenfeld
+                            try:
+                                fields = self._identify_order_fields() or {}
+                                qel = fields.get('qty')
+                                if qel:
+                                    self._set_element_value(qel, new_val_rounded)
+                                else:
+                                    # Fallback: aktives Element verwenden
+                                    try:
+                                        ae = self.driver.switch_to.active_element
+                                        if ae:
+                                            self._set_element_value(ae, new_val_rounded)
+                                    except Exception:
+                                        pass
+                                print(f"   ✅ Fee-Buffer aktiv: Menge {v} -> {new_val_rounded} (Buffer={'{:.4f}'.format(1-factor)} rel.)")
+                            except Exception:
+                                if DEBUG_MODE:
+                                    print('   ⚠️ Fee-Buffer setzen fehlgeschlagen')
+                    except Exception as e:
+                        if DEBUG_MODE:
+                            print(f"   ⚠️ Fee-Buffer-Block Fehler: {e}")
                     changed = True
                 else:
-                    # Optional fallback to percentages if MAX failed
                     if DEBUG_MODE:
                         print('   ⚠️ MAX hat keine Menge gesetzt – versuche Prozente (75/50/25)')
                     for pct in ('75%','50%','25%','10%'):
@@ -2879,28 +3498,20 @@ class FusionExistingAutomation:
                 pass
         # 2. BPS Buttons
         if USE_BPS_BUTTONS:
-            # Spezielle SELL BPS Logik: SELL_BPS_OFFSET (normalerweise negativ für bessere Preise)
+            # SELL BPS Logik: SELL_BPS_OFFSET (positiv: +bps über Marktpreis)
             action = trade.get('action','BUY').upper()
             
             if action == 'SELL':
-                # SELL: Verwende SELL_BPS_OFFSET (z.B. "-25" für -25bps unter Marktpreis)
+                # SELL: Always use +bps (e.g., +25bps)
                 try:
-                    sell_bps = int(SELL_BPS_OFFSET)  # z.B. -25
-                    if sell_bps < 0:
-                        want_minus = True
-                        want_plus = False
-                        bps_target = abs(sell_bps)  # 25
-                    else:
-                        want_minus = False
-                        want_plus = True
-                        bps_target = sell_bps
-                    if DEBUG_MODE:
-                        print(f'   💰 SELL BPS: {SELL_BPS_OFFSET} -> {"-" if want_minus else "+"}{bps_target}bps')
-                except ValueError:
-                    # Fallback zu alter Logik
-                    want_minus = False
-                    want_plus = True
-                    bps_target = BPS_PRIMARY
+                    sell_bps = int(SELL_BPS_OFFSET)
+                except Exception:
+                    sell_bps = BPS_PRIMARY
+                want_minus = False
+                want_plus = True
+                bps_target = abs(sell_bps)
+                if DEBUG_MODE:
+                    print(f'   💰 SELL BPS: +{bps_target}bps (erzwungen)')
             else:
                 # BUY: Normale Logik (-BPS für bessere Preise)
                 want_minus = True
@@ -3015,6 +3626,7 @@ class FusionExistingAutomation:
             max_selectors = [
                 "//button[normalize-space()='Max']",
                 "//button[normalize-space()='MAX']",
+                "//button[normalize-space()='Max.']",
                 "//*[self::button or @role='button' or @role='tab' or contains(@class,'button') or contains(@class,'pill') or contains(@class,'segment') or contains(@class,'toggle')][normalize-space()='MAX']",
                 "//*[self::button or @role='button' or @role='tab' or contains(@class,'button') or contains(@class,'pill') or contains(@class,'segment') or contains(@class,'toggle')][contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'max')]",
             ]
@@ -3104,11 +3716,40 @@ class FusionExistingAutomation:
 
     def process_trade(self, trade):
         try:
+            # 0) Pair/Ticker immer zuerst setzen und prüfen
+            if ENFORCE_PAIR_FIRST:
+                intended_pair = (trade.get('pair') or '').upper()
+                if intended_pair:
+                    # Versuche Standard-Auswahl
+                    try:
+                        self.select_pair(trade); time.sleep(0.3)
+                    except Exception:
+                        pass
+                    ui_pair = (self.get_current_pair() or '').upper()
+                    if ui_pair != intended_pair:
+                        # Fallback: Emergency Pair Selection
+                        try:
+                            from fusion_emergency_fixes import emergency_complete_fix
+                            emergency_complete_fix(self.driver, trade.get('action','BUY'), target_pair=intended_pair, debug=DEBUG_MODE)
+                        except Exception:
+                            pass
+                        time.sleep(0.3)
+                        ui_pair = (self.get_current_pair() or '').upper()
+                        if ui_pair != intended_pair:
+                            print(f"🛑 ABBRUCH: Ticker/Paar nicht korrekt gesetzt (UI='{ui_pair or 'unbekannt'}', erwartet='{intended_pair}').")
+                            return
+                # Nach erfolgreicher Paarwahl direkt die Seite setzen
+                try:
+                    # Seite (BUY/SELL) aktivieren; bei unsicherer Erkennung in PREVIEW weiterfahren
+                    self.ensure_side(trade.get('action','BUY'))
+                except Exception:
+                    pass
             # 🚨 EMERGENCY FIXES für die 3 Hauptprobleme
             try:
                 from fusion_emergency_fixes import emergency_complete_fix
                 action = trade.get('action', 'BUY').upper()
-                if emergency_complete_fix(self.driver, action, debug=DEBUG_MODE):
+                intended_pair = trade.get('pair')
+                if emergency_complete_fix(self.driver, action, target_pair=intended_pair, debug=DEBUG_MODE):
                     if DEBUG_MODE:
                         print(f"   ✅ Emergency fixes erfolgreich für {action}")
                 else:
@@ -3125,9 +3766,7 @@ class FusionExistingAutomation:
                     print(f"🛑 SELL {trade['pair']} übersprungen (DISABLE_SELLS aktiv)")
                     return
                 # 2. Whitelist aktiv?
-                if SELL_WHITELIST and trade['pair'].upper() not in SELL_WHITELIST:
-                    print(f"🛑 SELL {trade['pair']} nicht in SELL_WHITELIST -> übersprungen")
-                    return
+                # Entfernt: SELL_WHITELIST - keine Paar-Whitelist mehr
                 # 4. Preis Schutz (falls Marktpreis ermittelbar)
                 if STRICT_SELL_PRICE_PROTECT > 0 and trade.get('market_price') and trade.get('limit_price'):
                     try:
@@ -3150,9 +3789,41 @@ class FusionExistingAutomation:
                         print('⚠️ Eingabeproblem – SELL wird sicherheitshalber abgebrochen')
                         return
             self.ensure_trade_page(trade)
+            # TICKER FIRST: zwingend Paar per Tippen setzen und verifizieren, sonst abbrechen
+            if not self.ensure_pair_typed_and_verified(trade):
+                ui_pair = (self.get_current_pair() or 'unbekannt').upper()
+                intended = (trade.get('pair') or '').upper()
+                print(f"🛑 ABBRUCH: Ticker/Paar nicht korrekt gesetzt (UI='{ui_pair}', erwartet='{intended}').")
+                return
+            # Enforce the UI to match the screenshot controls before proceeding
+            if (not SAFE_PREVIEW_MODE) and STRICT_SCREENSHOT_MATCH and not self.verify_ui_matches_screenshot(trade):
+                print('🛑 ABBRUCH: UI entspricht nicht dem erwarteten Screenshot (Strategie=Limit, Prozent-Buttons, Max., BPS, Buttons).')
+                return
             trade = self.override_limit_with_realtime(trade)
             trade = self.adjust_trade_for_portfolio(trade)
             if trade.get('skip'): return
+            # Optional: Zuerst Analyse-basiertes Befüllen versuchen (kann via FUSION_ANALYZE_FIRST=0 abgeschaltet werden)
+            analyze_first = str(os.getenv('FUSION_ANALYZE_FIRST','1')).strip() not in ('0','false','False')
+            if analyze_first:
+                try:
+                    if self.auto_analyze_and_fill(trade):
+                        if DEBUG_MODE:
+                            print('   ✅ Analyse-basierte Befüllung erfolgreich')
+                    else:
+                        if DEBUG_MODE:
+                            print('   ⚠️ Analyse-basierte Befüllung hat nichts geändert – fahre fort')
+                except Exception:
+                    if DEBUG_MODE:
+                        print('   ⚠️ Analyse-basierte Befüllung Fehler – fahre fort')
+            # Deterministic end-to-end sequence first (can be disabled via FUSION_DETERMINISTIC=0)
+            use_deterministic = str(os.getenv('FUSION_DETERMINISTIC','1')).strip() not in ('0','false','False')
+            if use_deterministic:
+                try:
+                    self.run_deterministic_sequence(trade)
+                except Exception:
+                    if DEBUG_MODE:
+                        print('   ⚠️ Deterministische Sequenz Fehler – fahre mit Fallbacks fort')
+
             if TICKER_MAX_MODE:
                 # Only ensure we're on the right pair and side; do NOT enforce strategy or type price
                 self.select_pair(trade); time.sleep(0.3)
@@ -3481,6 +4152,25 @@ def main():
         print('❌ Selenium fehlt. Abbruch.'); return
     loader = TradeLoader()
     if not loader.load(): return
+    # Optional: run a single trade (or a narrow subset) via env filters
+    only_pair = (os.getenv('FUSION_ONLY_PAIR') or os.getenv('ONLY_PAIR') or '').strip().upper()
+    only_action = (os.getenv('FUSION_ONLY_ACTION') or os.getenv('ONLY_ACTION') or '').strip().upper()
+    only_trade_id = (os.getenv('FUSION_ONLY_TRADE_ID') or os.getenv('ONLY_TRADE_ID') or '').strip()
+    if only_pair or only_action or only_trade_id:
+        def _matches(t):
+            ok = True
+            if only_pair:
+                ok = ok and (t.get('pair','').upper() == only_pair)
+            if only_action:
+                ok = ok and (t.get('action','').upper() == only_action)
+            if only_trade_id:
+                ok = ok and (str(t.get('id','')) == only_trade_id)
+            return ok
+        original_n = len(loader.trades)
+        loader.trades = [t for t in loader.trades if _matches(t)]
+        print(f"🎯 Single-trade filter aktiv: pair='{only_pair}' action='{only_action}' id='{only_trade_id}' → {len(loader.trades)}/{original_n} Trades")
+        if not loader.trades:
+            print('ℹ️ Keine Trades nach Filter. Abbruch.'); return
     # Wenn auf Klick gewartet werden soll -> auto_continue deaktivieren
     effective_auto_continue = AUTO_CONTINUE and (not WAIT_FOR_CLICK)
     automation = FusionExistingAutomation(auto_continue=effective_auto_continue, wait_between=WAIT_BETWEEN, auto_submit=AUTO_SUBMIT)

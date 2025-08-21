@@ -44,10 +44,14 @@ This document explains the updated data-loading pipeline and how to use it in da
 
 ## How to use
 
-- Minimal update + run backtest (recommended):
-  1) smart_csv_update.smart_update_csv_files()
-  2) crypto_backtesting_module.run_live_backtest_analysis()
-  - The live backtest entrypoint already tries the smart updater first and falls back to the full updater automatically.
+- Orchestrated single‑run (recommended):
+  - Run `python live_backtest_WORKING.py`
+  - This updates data, generates the 14‑day report, creates `trades_today.json`, and starts the Fusion preview (if Chrome is ready).
+
+- Minimal update + run backtest:
+  1) `smart_csv_update.smart_update_csv_files()`
+  2) `crypto_backtesting_module.run_live_backtest_analysis()`
+  - The live backtest entrypoint can fall back to the full updater automatically.
 
 - Full update only:
   - Run get_real_crypto_data.update_csv_files_with_yahoo_advanced()
@@ -57,3 +61,4 @@ This document explains the updated data-loading pipeline and how to use it in da
 - CoinGecko code remains in get_real_crypto_data.py but isn’t used in the current pipeline.
 - SYMBOL_daily.csv files are auto-created if missing.
 - If you see a cosmetic odd character in a log line when setting today’s close, it’s harmless and can be cleaned up later.
+- `trades_today.json` is consumed by `BitpandaFusion_trade.py` for safe preview; when there are no orders for today, the Fusion step is skipped by the orchestrator.

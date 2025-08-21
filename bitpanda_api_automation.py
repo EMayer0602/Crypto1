@@ -181,6 +181,8 @@ def place_limit_order(config, trade):
         print(f"❌ Order Fehler: {e}")
         return None
 
+
+
 def main():
     """Hauptfunktion - Vollautomatische API-basierte Order"""
     print("🎯 BITPANDA API AUTOMATISIERUNG")

@@ -28,16 +28,20 @@ Ein robustes, produktionsreifes Python-Framework für Kryptowährungs-Backtestin
 - [Daten-Update (Yahoo + Bitpanda)](#daten-update-yahoo--bitpanda)
 - [Details: README_DATA_PIPELINE.md](README_DATA_PIPELINE.md)
 
-> Start hier – Daten-Update (Yahoo + Bitpanda)
+> Start hier – Orchestrierter Tageslauf (Daten → 14‑Tage Report → trades_today.json → Fusion‑Preview)
 >
 > ```powershell
-> # Minimal (smart) Update + Backtest/Report
-> python smart_csv_update.py
+> # Ein-Kommando Workflow
 > python live_backtest_WORKING.py
 >
-> # Vollständiges Update (falls nötig)
+> # Optional: Vorab nur Daten aktualisieren
 > python get_real_crypto_data.py
 > ```
+
+Hinweise:
+- Für die Fusion‑Preview Chrome mit Remote Debugging starten:
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\\ChromeProfile"
+- Der Orchestrator erzeugt automatisch den 14‑Tage Report und die Datei `trades_today.json` und startet anschließend die sichere Fusion‑Vorausfüllung.
 
 ## 📊 Überblick
 
@@ -84,7 +88,7 @@ pip install pandas numpy yfinance plotly
 
 ## 🚀 Quick Start
 
-### 1. Haupt-Backtest ausführen
+### 1. Haupt-Backtest/Orchestrator ausführen
 ```powershell
 python live_backtest_WORKING.py
 ```
@@ -92,6 +96,8 @@ python live_backtest_WORKING.py
 - HTML-Report mit interaktiven Charts
 - CSV-Dateien mit täglichen Trades
 - 14-Tage Trade Report (automatisch)
+- trades_today.json (heutige Orders für Fusion)
+- Optional: Fusion‑Preview mit sicherem Auto‑Fill (wenn Chrome via Remote Debug aktiv ist)
 - Optimierte Parameter für alle Ticker
 
 ### 2. Nur 14-Tage Trade Report
@@ -111,7 +117,7 @@ python get_real_crypto_data.py
 - Aktuelle Marktdaten für alle Ticker
 - Automatische CSV-Speicherung
 
-## � Daten-Update (Yahoo + Bitpanda)
+## 🔄 Daten-Update (Yahoo + Bitpanda)
 
 - Empfohlen (minimaler Update-Footprint):
     1) Smart-Update ausführen
@@ -131,7 +137,7 @@ Hinweis: Die Pipeline nutzt Yahoo Finance (daily bis T-3, hourly für T-2/T-1) u
 
 Mehr Details: siehe „README_DATA_PIPELINE.md“.
 
-## �📁 Projekt-Struktur
+## 📁 Projekt-Struktur
 
 ```
 Crypto_trading1/
@@ -179,7 +185,17 @@ Crypto_trading1/
 - **Live-Preise** über Yahoo Finance API
 - **Automatischer CSV-Export** mit Timestamp
 
-## 🔧 Konfiguration
+### � trades_today.json (heutige Orders)
+- Erstellt aus dem neuesten 14‑Tage Report durch `create_trades_today.py`
+- Schema (kompakt pro Order):
+    - `pair`: Ticker (z. B. BTC-EUR)
+    - `action`: `buy` | `sell`
+    - `strategy`: immer `Limit`
+    - `amount`: SELL → "Max.", BUY → `Quantity` aus Report (gerundet)
+    - `limit_price`: SELL → "+25bps", BUY → "-25bps"
+- Datei: `{ "orders": [ ... ] }`
+
+## �🔧 Konfiguration
 
 ### Ticker-Setup (`crypto_tickers.py`)
 ```python
@@ -371,7 +387,7 @@ Bei Fragen oder Problemen:
 
 **🚨 SICHERHEITSUPDATE (17.08.2025): Absolute Notbremse implementiert**
 
-Automatisches Vorbefüllen von Limit BUY/SELL Orders im bereits geöffneten Bitpanda Fusion Browser-Tab. **NIEMALS echte Orders übertragen** - nur Vorbereitung mit absoluter Sicherheit.
+Automatisches Vorbefüllen von Limit BUY/SELL Orders im bereits geöffneten Bitpanda Fusion Browser-Tab. **NIEMALS echte Orders übertragen** – nur Vorbereitung mit absoluter Sicherheit.
 
 ### 🔐 **ULTIMATE SAFETY MODE**
 ```powershell
@@ -391,13 +407,20 @@ Automatisches Vorbefüllen von Limit BUY/SELL Orders im bereits geöffneten Bitp
 
 ### ✅ Funktionale Features  
 - Automatisches Anhängen an laufende Chrome/Edge Session (Remote Debug Port 9222)
-- Laden der neuesten `TODAY_ONLY_trades_*.csv` (Semikolon-getrennt)
-- **SOL-EUR Auswahl** - Erzwungen über UI-Fixes
-- **MAX Button Aktivierung** - Erzwungen für alle Seiten
-- **-25bps für SELL** - Bessere Verkaufspreise  
-- Sequenzielles Eintragen aller Trades (Open → BUY, Close → SELL)
-- Strategie erzwingen: Limit Order
-- SELL Menge: Max Button
+- Lädt `trades_today.json` (heutige Orders) im Schema `{ orders: [...] }`
+- Regeln: SELL → Menge "Max." und `+25bps`; BUY → Menge=`Quantity` und `-25bps`
+- **SOL-EUR Auswahl** – Erzwungen über UI‑Fixes
+- **MAX Button Aktivierung** – Erzwungen für SELL
+- Sequenzielles Eintragen aller Orders (Preview‑Modus, kein Senden)
+- Strategie: Limit Orders
+### 🧭 Orchestrierter Ablauf
+`live_backtest_WORKING.py` führt automatisch aus:
+1) `get_real_crypto_data.py` (Datenupdate) →
+2) `get_14_day_trades.py` (14‑Tage Report) →
+3) `create_trades_today.py` (`trades_today.json`) →
+4) `BitpandaFusion_trade.py` (Fusion‑Preview)
+
+Wenn `trades_today.json` leer ist, wird Fusion übersprungen.
 
 ### 🚀 Bitpanda Fusion Trading – Schnellanleitung (Preview-Only)
 
