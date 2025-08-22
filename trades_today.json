@@ -1,18 +1,3 @@
 {
-  "orders": [
-    {
-      "pair": "LINK-EUR",
-      "action": "sell",
-      "strategy": "Limit",
-      "amount": "Max.",
-      "limit_price": "+25bps"
-    },
-    {
-      "pair": "XRP-EUR",
-      "action": "buy",
-      "strategy": "Limit",
-      "amount": 4170.0,
-      "limit_price": "-25bps"
-    }
-  ]
+  "orders": []
 }

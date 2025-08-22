@@ -198,7 +198,7 @@ def _load_orders_json(path: str) -> list:
     except Exception:
         return []
 
-def orchestrate_single_run(skip_fusion: bool = False):
+def orchestrate_single_run(skip_fusion: bool = False, force_fusion: bool = False):
     """Run full single-run workflow end-to-end."""
     print("🚀 Starting orchestrated LIVE workflow (data ➜ 14-day report ➜ trades_today.json ➜ Fusion)…")
 
@@ -238,12 +238,15 @@ def orchestrate_single_run(skip_fusion: bool = False):
     orders_path = os.path.join(BASE_DIR, "trades_today.json")
     orders = _load_orders_json(orders_path)
     if not orders:
-        print("ℹ️ No orders found in trades_today.json. Skipping Fusion preview.")
-        print("✅ Orchestrated LIVE workflow completed (no orders).")
-        return True
+        if force_fusion:
+            print("ℹ️ No orders found in trades_today.json, but --force-fusion specified. Launching Fusion anyway for manual or diagnostic session…")
+        else:
+            print("ℹ️ No orders found in trades_today.json. Skipping Fusion preview.")
+            print("✅ Orchestrated LIVE workflow completed (no orders).")
+            return True
     print(f"✅ trades_today.json contains {len(orders)} order(s).")
 
-    if skip_fusion:
+    if skip_fusion and not force_fusion:
         print("ℹ️ --skip-fusion specified. Not launching Fusion.")
         print("✅ Orchestrated LIVE workflow completed (Fusion skipped).")
         return True
@@ -264,7 +267,7 @@ def orchestrate_single_run(skip_fusion: bool = False):
     return True
 
 
-def legacy_analysis_run(skip_fusion: bool = False) -> bool:
+def legacy_analysis_run(skip_fusion: bool = False, force_fusion: bool = False) -> bool:
     """Extended legacy behavior now also runs 14-day report + trades_today + optional Fusion.
 
     Steps:
@@ -308,7 +311,7 @@ def legacy_analysis_run(skip_fusion: bool = False) -> bool:
         return False
 
     # 5) Fusion
-    if skip_fusion:
+    if skip_fusion and not force_fusion:
         print("ℹ️ --skip-fusion specified. Not launching Fusion (legacy+extended).")
         print("✅ LEGACY+EXTENDED flow completed (Fusion skipped).")
         return True
@@ -316,9 +319,12 @@ def legacy_analysis_run(skip_fusion: bool = False) -> bool:
     orders_path = os.path.join(BASE_DIR, "trades_today.json")
     orders = _load_orders_json(orders_path)
     if not orders:
-        print("ℹ️ No orders in trades_today.json. Fusion launch skipped.")
-        print("✅ LEGACY+EXTENDED flow completed (no orders).")
-        return True
+        if force_fusion:
+            print("ℹ️ No orders in trades_today.json, but --force-fusion specified. Launching Fusion anyway…")
+        else:
+            print("ℹ️ No orders in trades_today.json. Fusion launch skipped.")
+            print("✅ LEGACY+EXTENDED flow completed (no orders).")
+            return True
     print(f"✅ trades_today.json contains {len(orders)} order(s). Launching Fusion preview…")
 
     code, out, err = _run_script("BitpandaFusion_trade.py")
@@ -339,16 +345,17 @@ if __name__ == "__main__":
     parser.add_argument("--orchestrate", action="store_true", help="Run full data→report→trades_today→Fusion workflow")
     parser.add_argument("--skip-fusion", action="store_true", help="Skip Fusion preview in orchestrated mode")
     parser.add_argument("--legacy", action="store_true", help="Run legacy behavior (today-only CSV + live backtest analysis)")
+    parser.add_argument("--force-fusion", action="store_true", help="Always launch Fusion even if there are zero generated orders")
     args = parser.parse_args()
 
     if args.legacy:
         # Explicitly run the extended legacy flow (now includes 14-day & Fusion steps)
-        ok = legacy_analysis_run(skip_fusion=args.skip_fusion)
+        ok = legacy_analysis_run(skip_fusion=args.skip_fusion, force_fusion=args.force_fusion)
         sys.exit(0 if ok else 1)
     else:
         # Default: orchestrated single-run workflow
-        ok = orchestrate_single_run(skip_fusion=args.skip_fusion)
+        ok = orchestrate_single_run(skip_fusion=args.skip_fusion, force_fusion=args.force_fusion)
         if not ok:
             print("\n⚠️ Orchestration issues encountered. Running legacy analysis as fallback…")
-            ok = legacy_analysis_run()
+            ok = legacy_analysis_run(force_fusion=args.force_fusion)
         sys.exit(0 if ok else 1)

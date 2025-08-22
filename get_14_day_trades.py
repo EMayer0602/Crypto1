@@ -9,6 +9,21 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
 import glob
+import builtins
+
+# Override print to strip non-ASCII (Windows console safety)
+_orig_print = builtins.print
+def ascii_print(*args, **kwargs):
+    cleaned = []
+    for a in args:
+        s = str(a)
+        try:
+            s = s.encode('ascii', 'ignore').decode()
+        except Exception:
+            pass
+        cleaned.append(s)
+    _orig_print(*cleaned, **kwargs)
+builtins.print = ascii_print
 
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -33,7 +48,7 @@ def extract_trades_from_backtest_results():
     """
     Extrahiert echte Trades aus den Backtest-Ergebnissen der letzten 14 Tage
     """
-    print("\n🔍 EXTRAHIERE ECHTE TRADES AUS BACKTEST-ERGEBNISSEN")
+    print("\nEXTRAHIERE ECHTE TRADES AUS BACKTEST-ERGEBNISSEN")
     print("="*60)
     
     cutoff_date = datetime.now() - timedelta(days=14)
@@ -44,21 +59,19 @@ def extract_trades_from_backtest_results():
     
     for ticker_name, config in crypto_tickers.items():
         symbol = config.get('symbol', ticker_name)
-        
-        print(f"\n📊 Verarbeite {ticker_name} ({symbol})...")
-        
+        print(f"\nVerarbeite {ticker_name} ({symbol})...")
         try:
             # Führe Backtest für diesen Ticker aus
             backtest_result = run_backtest(symbol, config)
             
             if not backtest_result:
-                print(f"   ⚠️ Kein Backtest-Ergebnis für {ticker_name}")
+                print(f"   Kein Backtest-Ergebnis fuer {ticker_name}")
                 continue
                 
             # Extrahiere matched_trades
             matched_trades = backtest_result.get('matched_trades')
             if matched_trades is None or matched_trades.empty:
-                print(f"   ⚠️ Keine Trades für {ticker_name}")
+                print(f"   Keine Trades fuer {ticker_name}")
                 continue
             # Aufteilen: echte geschlossene Trades vs. künstliche (Artificial)
             type_col_exists = 'Type' in matched_trades.columns
@@ -75,29 +88,12 @@ def extract_trades_from_backtest_results():
                 if before != after:
                     print(f"   ✅ Status-Filter: {before - after} nicht-geschlossene Row(s) entfernt")
 
-            # Künstliche Trades: nur berücksichtigen, wenn Entry- und Exit-Datum am selben oder am nächsten Tag sind,
-            # und dann NUR den Opening-Trade (BUY) aufnehmen
-            artificial_same_day_opens = pd.DataFrame()
+            # Künstliche Trades (Type == Artificial): jetzt ALLE berücksichtigen (Open immer; Close falls vorhanden)
+            artificial_trades = pd.DataFrame()
             if type_col_exists:
-                artificial = matched_trades[matched_trades['Type'].fillna('') == 'Artificial'].copy()
-                if not artificial.empty:
-                    def _same_or_next_day(row):
-                        e_str = str(row.get('Entry Date', ''))
-                        x_str = str(row.get('Exit Date', ''))
-                        try:
-                            e_dt = pd.to_datetime(e_str) if e_str else pd.NaT
-                            x_dt = pd.to_datetime(x_str) if x_str else pd.NaT
-                            if pd.isna(e_dt) or pd.isna(x_dt):
-                                return False
-                            # Include if same day or next day (captures overnight artificial close)
-                            delta_days = (x_dt.date() - e_dt.date()).days
-                            return 0 <= delta_days <= 1
-                        except Exception:
-                            return False
-
-                    artificial_same_day_opens = artificial[artificial.apply(_same_or_next_day, axis=1)]
-                    if not artificial_same_day_opens.empty:
-                        print(f"   ➕ Artificial same/next-day Trades (nur OPEN) aufgenommen: {len(artificial_same_day_opens)}")
+                artificial_trades = matched_trades[matched_trades['Type'].fillna('') == 'Artificial'].copy()
+                if not artificial_trades.empty:
+                    print(f"   Artificial Trades erkannt: {len(artificial_trades)} (alle werden berücksichtigt)")
             
             # Hole aktuellen Preis
             current_price = get_real_bitpanda_price(symbol)
@@ -123,7 +119,7 @@ def extract_trades_from_backtest_results():
                         exit_date = None
                         
                 except Exception as e:
-                    print(f"     ⚠️ Datum-Parse-Fehler: {e}")
+                    print(f"     Datum-Parse-Fehler: {e}")
                     continue
                 
                 # Entry Trade (BUY) hinzufügen wenn in den letzten 14 Tagen
@@ -144,7 +140,7 @@ def extract_trades_from_backtest_results():
                         'artificial_included': False
                     }
                     all_trades.append(trade_entry)
-                    print(f"     📈 BUY: {entry_date.date()}, {quantity:.6f} @ €{entry_price:.4f}")
+                    print(f"     BUY: {entry_date.date()}, {quantity:.6f} @ EUR {entry_price:.4f}")
                 
                 # Exit Trade (SELL) hinzufügen wenn in den letzten 14 Tagen
                 if exit_date and exit_date >= cutoff_date:
@@ -164,19 +160,29 @@ def extract_trades_from_backtest_results():
                         'artificial_included': False
                     }
                     all_trades.append(trade_exit)
-                    print(f"     💰 SELL: {exit_date.date()}, {quantity:.6f} @ €{exit_price:.4f}")
+                    print(f"     SELL: {exit_date.date()}, {quantity:.6f} @ EUR {exit_price:.4f}")
 
-            # Verarbeite künstliche same/next-day Trades: nur OPEN (BUY) aufnehmen, kein SELL
-            if not artificial_same_day_opens.empty:
-                for _, trade in artificial_same_day_opens.iterrows():
+            # Verarbeite künstliche Trades (Open immer; Close falls vorhanden und innerhalb Zeitraum)
+            if not artificial_trades.empty:
+                for _, trade in artificial_trades.iterrows():
                     entry_date_str = str(trade.get('Entry Date', ''))
+                    exit_date_str = str(trade.get('Exit Date', ''))
+                    status_val = str(trade.get('Status', '')).upper()
                     try:
-                        entry_date = pd.to_datetime(entry_date_str)
+                        entry_date = pd.to_datetime(entry_date_str) if entry_date_str else None
                     except Exception:
-                        continue
-                    if entry_date >= cutoff_date:
-                        entry_price = float(trade.get('Entry Price', 0))
-                        quantity = float(trade.get('Quantity', 0))
+                        entry_date = None
+                    try:
+                        exit_date = pd.to_datetime(exit_date_str) if exit_date_str else None
+                    except Exception:
+                        exit_date = None
+
+                    quantity = float(trade.get('Quantity', 0))
+                    entry_price = float(trade.get('Entry Price', 0))
+                    exit_price = float(trade.get('Exit Price', 0)) if exit_date is not None else None
+
+                    # ALWAYS include artificial OPEN if within 14-day window
+                    if entry_date and entry_date >= cutoff_date:
                         trade_entry = {
                             'date': entry_date.strftime('%Y-%m-%d'),
                             'ticker': ticker_name,
@@ -187,11 +193,13 @@ def extract_trades_from_backtest_results():
                             'open_close': 'Open',
                             'action': 'BUY',
                             'realtime_price': current_price,
-                            # Markiere explizit, dass dieser Trade als Artificial (same/next-day) inkludiert wurde
                             'artificial_included': True
                         }
                         all_trades.append(trade_entry)
-                        print(f"     🧩 Artificial BUY (same/next-day): {entry_date.date()}, {quantity:.6f} @ €{entry_price:.4f}")
+                        print(f"     Artificial BUY: {entry_date.date()}, {quantity:.6f} @ EUR {entry_price:.4f}")
+
+                    # NOTE: Artificial CLOSE legs are intentionally NOT included per user request
+                    # (Only the artificial opening BUY is listed.)
                     
         except Exception as e:
             print(f"   ❌ Fehler bei {ticker_name}: {e}")
@@ -200,9 +208,9 @@ def extract_trades_from_backtest_results():
     all_trades.sort(key=lambda x: x['date'], reverse=True)
     
     # Ausgabe des Reports
-    print(f"\n📊 ===== 14-TAGE TRADES REPORT (ECHTE DATEN) =====")
-    print(f"📅 Zeitraum: {cutoff_date.date()} bis {datetime.now().date()}")
-    print(f"🔢 Trades gefunden: {len(all_trades)}")
+    print(f"\n===== 14-TAGE TRADES REPORT (ECHTE DATEN) =====")
+    print(f"Zeitraum: {cutoff_date.date()} bis {datetime.now().date()}")
+    print(f"Trades gefunden: {len(all_trades)}")
     print(f"\n{header}")
     print("-" * 150)
     
@@ -224,25 +232,23 @@ def extract_trades_from_backtest_results():
         df = df[cols]
         df.columns = ['Date', 'Ticker', 'Quantity', 'Price', 'Order Type', 'Limit Price', 'Open/Close', 'Action', 'Realtime Price Bitpanda', 'ArtificialIncluded']
         df.to_csv(csv_filename, sep=';', index=False)
-        print(f"\n💾 Report gespeichert als: {csv_filename}")
+        print(f"\nReport gespeichert als: {csv_filename}")
         
         # Zusätzliche Statistiken
         buy_trades = [t for t in all_trades if t['open_close'] == 'Open']
         sell_trades = [t for t in all_trades if t['open_close'] == 'Close']
-        
-        print(f"\n📊 STATISTIKEN:")
-        print(f"   🟢 BUY Trades:  {len(buy_trades)}")
-        print(f"   🔴 SELL Trades: {len(sell_trades)}")
-        print(f"   📈 Ticker mit Aktivität: {len(set(t['ticker'] for t in all_trades))}")
-        
+        print(f"\nSTATISTIKEN:")
+        print(f"   BUY Trades:  {len(buy_trades)}")
+        print(f"   SELL Trades: {len(sell_trades)}")
+        print(f"   Ticker mit Aktivität: {len(set(t['ticker'] for t in all_trades))}")
     else:
-        print(f"\n⚠️ Keine Trades in den letzten 14 Tagen gefunden")
+        print(f"\nKeine Trades in den letzten 14 Tagen gefunden")
     
     return all_trades
 
 if __name__ == "__main__":
-    print("🚀 STARTE 14-TAGE TRADE EXTRAKTION...")
+    print("STARTE 14-TAGE TRADE EXTRAKTION...")
     
     trades = extract_trades_from_backtest_results()
     
-    print(f"\n✅ FERTIG! {len(trades)} Trades extrahiert und gespeichert.")
+    print(f"\nFERTIG! {len(trades)} Trades extrahiert und gespeichert.")

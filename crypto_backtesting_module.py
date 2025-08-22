@@ -1850,23 +1850,23 @@ def run_backtest(symbol, config):
         trade_on = config.get('trade_on', 'close').lower()
         order_round_factor = config.get('order_round_factor', 0.01)
         commission_rate = config.get('commission_rate', 0.0018)
-        
-        print(f"\n=== Backtest für {symbol} ===")
-        print(f"💰 Initial Capital: {initial_capital}")
-        print(f"📊 Trade on: {trade_on.title()} price")
-        print(f"🔧 Order Round Factor: {order_round_factor}")
-        print(f"💸 Commission Rate: {commission_rate*100}%")
-        print(f"🔍 DEBUG: initial_capital = {initial_capital} (from config key 'initialCapitalLong')")  # DEBUG
-        
+
+        print(f"\n=== Backtest fuer {symbol} ===")
+        print(f"Initial Capital: {initial_capital}")
+        print(f"Trade on: {trade_on.title()} price")
+        print(f"Order Round Factor: {order_round_factor}")
+        print(f"Commission Rate: {commission_rate*100}%")
+        print(f"DEBUG: initial_capital = {initial_capital} (from config key 'initialCapitalLong')")  # DEBUG
+
         # Daten laden - aus config.py
         from config import backtest_years
-        print(f"📅 Backtest Zeitraum: {backtest_years} Jahr(e) (aus config.py)")
+        print(f"Backtest Zeitraum: {backtest_years} Jahr(e) (aus config.py)")
         df = load_crypto_data_yf(symbol, backtest_years)
         if df is None or df.empty:
-            print(f"❌ Keine Daten für {symbol}")
+            print(f"Keine Daten für {symbol}")
             return False
-        
-        print(f"📊 Dataset: {len(df)} Zeilen ({df.index[0].date()} bis {df.index[-1].date()})")
+
+        print(f"Dataset: {len(df)} Zeilen ({df.index[0].date()} bis {df.index[-1].date()})")
         
         # ✅ CREATE BACKTEST FRAME (25% - 95% of data)
         df_bt = create_backtest_frame(df, backtesting_begin, backtesting_end)
