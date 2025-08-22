@@ -229,6 +229,18 @@ Crypto_trading1/
 - **Live-Preise** über Yahoo Finance API
 - **Automatischer CSV-Export** mit Timestamp
 
+#### 🔄 Artificial Trades (künstliche Tagesabschluss-Positionen)
+- Markierung erfolgt intern über `Type == 'Artificial'` in den Matched Trades.
+- Der 14-Tage Report übernimmt jetzt **nur Artificial OPEN (BUY)** Events innerhalb des 14-Tage Fensters.
+- Artificial CLOSE (SELL) Legs werden bewusst NICHT mehr gelistet (vereinfachte Order-Liste für Fusion / Preview).
+- Spalte `ArtificialIncluded` = `Yes` kennzeichnet diese künstlichen BUY-Einträge.
+- Rationale: Offene simulierte Positionen sollen als potenzielle Einstiegssignale erscheinen, nicht doppelt durch sofortige künstliche Exits verwässert werden.
+
+Beispiel-Zeile (Artificial BUY):
+```
+2025-08-20;BTC-EUR;0.199000;98064.4063;Limit;97966.3429;Open;BUY;96963.4531;Yes
+```
+
 ### � trades_today.json (heutige Orders)
 - Erstellt aus dem neuesten 14‑Tage Report durch `create_trades_today.py`
 - Schema (kompakt pro Order):
