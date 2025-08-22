@@ -74,6 +74,9 @@ Thumbs.db
 !*.txt
 !*.json
 
+# Re-ignore temporary captured console output txt files
+out_trades*.txt
+
 # ---- Generated Data / Reports (exclude from VCS) ----
 # Daily price CSVs
 *-EUR_daily.csv
