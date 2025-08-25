@@ -120,15 +120,26 @@ plotly
 datetime
 ```
 
+git clone <repository-url>
 ### Installation
 ```powershell
 # Repository klonen
 git clone <repository-url>
 cd Crypto_trading1
 
-# Dependencies installieren
-pip install pandas numpy yfinance plotly
+# (Optional) Virtuelle Umgebung
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Abhängigkeiten installieren (verwaltet in requirements.txt)
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Umgebung validieren
+python env_check.py
 ```
+
+Falls `env_check.py` mit Exit-Code 1 endet, zuerst die gemeldeten Pflichtmodule oder .env Probleme lösen.
 
 ## 🚀 Quick Start
 
@@ -339,10 +350,13 @@ python debug_optimal_params.py      # Parameter-Optimierung validieren
 ## ⚡ Erweiterte Features
 
 ### 🎯 Parameter-Optimierung
-- **Brute-Force-Suche** über definierte Parameterbereiche
-- **Sharpe-Ratio-Maximierung** als Zielfunktion
-- **Cross-Validation** zur Vermeidung von Overfitting
-- **Multi-Threading** für schnellere Berechnung
+ - **Brute-Force-Suche** über definierte Parameterbereiche
+ - **Zielfunktion: Maximierung des Endkapitals (Final Capital)**
+     - Aktuelle Implementierung bewertet jede (past_window, trade_window) Kombination anhand des resultierenden `final_capital` aus der simulierten Handelsstrecke.
+     - Die frühere README-Formulierung zur Sharpe-Ratio war veraltet. Eine Sharpe-Berechnung ist momentan nicht aktiv im Optimierungscode.
+ - (Optional erweiterbar) Sharpe-/Risk-Adjustierung kann ergänzt werden, indem pro Parameter-Kombination eine Equity-Kurve aufgebaut und der risikoadjustierte Kennwert berechnet wird.
+ - **Cross-Validation (geplant / placeholder)** zur Overfitting-Reduktion
+ - **Multi-Threading (optional)** für Performance – aktuell Single-Thread, weil Inputgröße moderat ist.
 
 ### 📈 Technische Indikatoren
 - **Moving Averages** (SMA, EMA)
@@ -384,6 +398,76 @@ python debug_trade_execution.py
 # Lösung: Datenintegrität validieren
 python check_crypto_csvs.py
 ```
+
+**5. Unterschiedliche Backtest-Ergebnisse zwischen Läufen**
+```powershell
+# Lösung 1: Stabilen Modus aktivieren (entfernt den laufenden Tages-Balken)
+$env:STABLE_BACKTEST=1
+python live_backtest_WORKING.py
+
+# Lösung 2: Prüfen ob Datensignatur gleich ist
+python crypto_backtesting_module.py  # Jede Ticker-Ladung zeigt eine 🆔 Dataset signature
+```
+
+**6. Fehlende/Inkonsistente Module**
+```powershell
+python env_check.py   # zeigt rot/gelb markierte Probleme
+```
+
+**7. API-Key Probleme (.env Encoding)**
+```powershell
+python fix_env_setup.py
+python env_check.py   # prüft ob BITPANDA_API_KEY gesetzt ist
+```
+
+---
+
+## 🧪 Environment & Reproducibility
+
+| Feature | Zweck | Nutzung |
+|---------|-------|---------|
+| `requirements.txt` | Einheitliche Paketversionen | `pip install -r requirements.txt` |
+| `env_check.py` | Diagnose (Python, Pakete, .env, CSV-Zusammenfassung) | `python env_check.py` (Exit 0 = OK) |
+| Dataset Signature | Hash der Close-Werte + Zeilenanzahl (Vergleichbarkeit) | Beim Laden: `🆔 Dataset signature SYMBOL: rows=..., sha1=...` |
+| `STABLE_BACKTEST=1` | Entfernt heutigen (partiellen) Balken für reproduzierbare Ergebnisse | `setx STABLE_BACKTEST 1` (oder PowerShell Session: `$env:STABLE_BACKTEST=1`) |
+| Offene künstliche Position | Markiert unrealisierten Status am Tagesende | In Matched Trades: `Status=OPEN`, `Type=Artificial` |
+
+### Dataset Signature
+Jedes Laden der Kursdaten erzeugt eine SHA1 verkürzte Signatur über die `Close`-Serie. Beispiel:
+```
+🆔 Dataset signature BTC-EUR: rows=412, sha1=3fa91b7c4e21
+```
+Wenn sich Resultate unerwartet ändern, zuerst prüfen ob sich die Signatur (Datenbasis) geändert hat.
+
+### Stabiler Backtest (ohne heutigen Balken)
+Der Tages‑Balken kann während des Handelstages stark schwanken. Für vergleichbare Optimierungs- und Backtestläufe:
+```powershell
+$env:STABLE_BACKTEST=1
+python crypto_backtesting_module.py
+```
+Danach wieder deaktivieren (neues Terminal oder `$env:STABLE_BACKTEST=""`).
+
+### Environment Check Output (Ausschnitt)
+```
+CRYPTO ENVIRONMENT DIAGNOSTIC
+== Python Version ==
+3.11.6 ...
+== Module Availability (Mandatory) ==
+pandas                      version 2.2.2
+...
+== Project Module Smoke Imports ==
+crypto_backtesting_module   OK
+...
+== Summary ==
+Mandatory checks pass: True
+```
+
+### .env Hinweise
+- Datei wird ASCII erstellt über `fix_env_setup.py` (vermeidet BOM/Encoding-Probleme)
+- Platzhalter `YOUR_NEW_API_KEY_HERE` unbedingt ersetzen
+- `env_check.py` warnt, falls Key fehlt oder Platzhalter ist
+
+---
 
 ## 📈 Roadmap
 

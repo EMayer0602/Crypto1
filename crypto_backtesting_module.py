@@ -1,6 +1,6 @@
 import warnings
-import traceback
 warnings.simplefilter("ignore", category=FutureWarning)
+import traceback
 import webbrowser
 import os
 import csv
@@ -8,6 +8,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import hashlib
 import time
 from trade_execution import prepare_orders_from_trades, execute_trade, submit_order_bitpanda, save_all_orders_html_report
 from config import COMMISSION_RATE, MIN_COMMISSION, ORDER_ROUND_FACTOR, backtesting_begin, backtesting_end, backtest_years
@@ -20,28 +21,17 @@ from signal_utils import (
     update_level_close_long,
     simulate_trades_compound_extended,
     berechne_best_p_tw_long,
-    # plot_combined_chart_and_equity  # ❌ Deprecated: use Plotly version from plotly_utils.py
 )
-# Am Anfang der Datei bei den anderen Imports hinzufügen:
-from trades_weekly_display import display_weekly_trades_console, create_weekly_trades_html
-
-# FIXED: Remove non-existent function
+from trades_weekly_display import display_weekly_trades_console, create_weekly_trades_html, add_weekly_trades_to_existing_reports
 from plotly_utils import (
     plotly_combined_chart_and_equity,
     display_extended_trades_table,
     format_trading_tables,
     create_trades_dataframe,
     print_statistics_table,
-    create_equity_curve_from_matched_trades  # ✅ ADD THIS
+    create_equity_curve_from_matched_trades
 )
 from report_generator import generate_combined_report_from_memory
-
-# Import Weekly Trades Display Module
-from trades_weekly_display import (
-    display_weekly_trades_console,
-    create_weekly_trades_html,
-    add_weekly_trades_to_existing_reports
-)
 
 # --- Globale Variablen ---
 TRADING_MODE = "paper_trading"
@@ -51,551 +41,67 @@ CSV_PATH = "C:\\Users\\Edgar.000\\Documents\\____Trading strategies\\Crypto_trad
 base_dir = "C:/Users/Edgar.000/Documents/____Trading strategies/Crypto_trading1"
 
 def load_crypto_data_yf(symbol, backtest_years=1, max_retries=3):
-    """
-    Lädt Crypto-Daten aus existierenden CSV-Dateien und begrenzt auf backtest_years
+    """Load OHLCV daily data for a symbol from local CSV (preferred) or yfinance.
+    Trim to the most recent backtest_years years.
+    Expected CSV format: <SYMBOL>_daily.csv with columns Date,Open,High,Low,Close,Volume.
+
+    Reproducibility features:
+      - If env var STABLE_BACKTEST=1 is set, skip generating an artificial partial bar for the current day.
+      - Prints a dataset signature (row count + SHA1 hash of Close series) so results can be compared across runs.
     """
     try:
-        # CSV-Datei Namen basierend auf existierendem Format
         csv_filename = f"{symbol}_daily.csv"
         csv_path = os.path.join(os.getcwd(), csv_filename)
-        
-        # Prüfe ob CSV existiert
+
         if os.path.exists(csv_path):
             file_age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(csv_path))
             print(f"Loading {symbol} from CSV cache ({csv_filename}) - Age: {file_age.days} days")
-            
-            try:
-                df_full = pd.read_csv(csv_path, index_col=0, parse_dates=True)
-                print(f"📊 CSV vollständig geladen: {len(df_full)} Zeilen ({df_full.index[0].date()} bis {df_full.index[-1].date()})")
-                
-                # Begrenze auf backtest_years (aus config.py)
-                end_date = df_full.index[-1]
-                start_date = end_date - timedelta(days=int(365 * backtest_years))
-                df = df_full[df_full.index >= start_date].copy()
-                
-                print(f"📅 Begrenzt auf {backtest_years} Jahr(e): {len(df)} Zeilen ({df.index[0].date()} bis {df.index[-1].date()})")
-                print(f"🔍 Reduziert von {len(df_full)} auf {len(df)} Tage ({len(df_full)-len(df)} Tage entfernt)")
-                
-                return df
-            except Exception as e:
-                print(f"❌ CSV-Lesefehler: {e}")
-                return None
+            df = pd.read_csv(csv_path)
         else:
-            print(f"❌ CSV nicht gefunden: {csv_filename}")
-            # Fallback: Lade von Yahoo Finance
-            print(f"⬇️ Lade {symbol} von Yahoo Finance...")
-            
+            print(f"CSV {csv_filename} not found. Downloading from yfinance…")
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=365 * backtest_years)
-            
-            ticker = yf.Ticker(symbol)
-            df = ticker.history(start=start_date, end=end_date, interval='1d')
-            
-            if df.empty:
-                print(f"❌ Keine Daten für {symbol}")
+            start_date = end_date - timedelta(days=int(backtest_years*365)+5)
+            df = yf.download(symbol, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), interval='1d', auto_adjust=True, progress=False)
+            if df is None or df.empty:
+                print(f"❌ No data downloaded for {symbol}")
                 return None
-                
-            print(f"✅ Download erfolgreich: {len(df)} Zeilen")
-            return df
-        
+            df.reset_index(inplace=True)
+            df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+            df.to_csv(csv_path, index=False)
+            print(f"Saved fresh data to {csv_filename}")
+
+        # Standardize columns
+        rename_map = {c: c.title() for c in ['open','high','low','close','volume']}
+        df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
+        date_col = 'Date' if 'Date' in df.columns else 'date'
+        df[date_col] = pd.to_datetime(df[date_col])
+        df.set_index(date_col, inplace=True)
+        df = df.sort_index()
+
+        # Trim to backtest_years
+        cutoff = df.index.max() - timedelta(days=int(backtest_years*365)+2)
+        df = df[df.index >= cutoff]
+
+        # Optional: remove today's artificial bar for stable backtests
+        if os.environ.get("STABLE_BACKTEST", "0") == "1":
+            today = datetime.now().date()
+            if df.index.max().date() == today:
+                print("🧊 STABLE_BACKTEST active -> dropping today's partial bar for reproducibility")
+                df = df[df.index.date < today]
+
+        # Dataset signature
+        try:
+            close_bytes = b"|".join([f"{v:.8f}".encode() for v in df['Close'].astype(float).values])
+            sha = hashlib.sha1(close_bytes).hexdigest()[:12]
+            print(f"🆔 Dataset signature {symbol}: rows={len(df)}, sha1={sha}")
+        except Exception as sig_err:
+            print(f"⚠️ Could not compute dataset signature: {sig_err}")
+
+        return df
     except Exception as e:
-        print(f"ERROR loading {symbol}: {e}")
-        return None
-
-def flatten_crypto_header(df):
-    # MultiIndex abflachen falls nötig
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    
-    # "Price" Spalte entfernen falls vorhanden
-    if "Price" in df.columns:
-        df = df.drop(columns=["Price"])
-    
-    # WICHTIG: Duplikate entfernen!
-    df = df[~df.index.duplicated(keep='last')]
-    
-    # Nur OHLCV Spalten behalten
-    expected_cols = ["Open", "High", "Low", "Close", "Volume"]
-    df = df[expected_cols]
-    
-    # Index als Date setzen falls nötig
-    if not isinstance(df.index, pd.DatetimeIndex):
-        df.index = pd.to_datetime(df.index)
-    df.index.name = "Date"
-    
-    # Display - die letzten 5 Zeilen!
-    print(f"Data shape: {df.shape}")
-    print(f"Date range: {df.index.min()} to {df.index.max()}")
-    print(df.reset_index().tail(5).to_string(index=False))  # <-- LIMIT auf 5 (TAIL)!
-    
-    return df
-
-def save_crypto_csv(df, ticker, data_dir):
-    df_out = df.reset_index()
-    file_path = os.path.join(data_dir, f"{ticker}_daily.csv")
-    df_out.to_csv(file_path, index=False)
-    print(f"✅ Gespeichert: {file_path}")
-
-def safe_loader(symbol, csv_path, refresh=True):
-    filename = os.path.join(csv_path, f"{symbol}_daily.csv")
-
-    def flatten_csv_header_if_needed(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            first = f.readline()
-            second = f.readline()
-            third = f.readline()
-            f.seek(0)
-            if first.strip().startswith("Price") and third.strip().startswith("Date"):
-                df = pd.read_csv(filename, skiprows=3, header=None)
-                df.columns = ["Date", "Open", "High", "Low", "Close", "Volume"]
-                df.to_csv(filename, index=False)
-                print(f"⚒️ Header in {filename} flattened and fixed.")
-                return df
-            elif first.strip().startswith("Date"):
-                return pd.read_csv(filename, parse_dates=["Date"], index_col="Date")
-            elif first.strip().startswith("Price"):
-                df = pd.read_csv(filename)
-                df = df.rename(columns={"Price": "Date"})
-                df.to_csv(filename, index=False)
-                print(f"⚒️ Header in {filename} fixed (Price->Date).")
-                return pd.read_csv(filename, parse_dates=["Date"], index_col="Date")
-            else:
-                raise ValueError(f"Unrecognized header in {filename}")
-
-    if os.path.exists(filename):
-        try:
-            df_local = flatten_csv_header_if_needed(filename)
-            if "Date" in df_local.columns:
-                df_local["Date"] = pd.to_datetime(df_local["Date"])
-                df_local.set_index("Date", inplace=True)
-            last_local_date = df_local.index.max()
-        except Exception as e:
-            print(f"⚠️ {symbol} CSV-Problem: {e}. Lösche und lade neu.")
-            os.remove(filename)
-            df_local = pd.DataFrame()
-            last_local_date = None
-    else:
-        df_local = pd.DataFrame()
-        last_local_date = None
-
-    today = pd.Timestamp(datetime.utcnow().date())
-    if last_local_date is not None:
-        next_date = last_local_date + pd.Timedelta(days=1)
-        if next_date > today:
-            print(f"{symbol}: Already up to date.")
-            return df_local
-        start_date = next_date.strftime('%Y-%m-%d')
-    else:
-        start_date = "2024-07-01"
-
-    df_new = yf.download(symbol, start=start_date, end=None, interval="1d", auto_adjust=True, progress=False)
-    if df_new is None or df_new.empty:
-        print(f"⚠️ {symbol}: Keine neuen Daten")
-        return df_local if not df_local.empty else None
-
-    df_new.index.name = "Date"
-    df_new = df_new[["Open", "High", "Low", "Close", "Volume"]].copy()
-    if not df_local.empty:
-        df_new = df_new[~df_new.index.isin(df_local.index)]
-
-    df_combined = pd.concat([df_local, df_new])
-    df_combined.sort_index(inplace=True)
-    df_combined.to_csv(filename)
-    print(f"✅ {symbol}: aktualisiert bis {df_combined.index.max().date()}")
-
-    return df_combined
-
-# Nach den imports, vor den anderen Funktionen:
-
-def compute_equity_curve(df, trades, start_capital, long=True, trade_on="Close"):
-    """
-    DO NOT CHANGE WITHOUT EXPLICIT USER APPROVAL.
-    Delegates to the live (Excel-validated) equity curve used in charts:
-    plotly_utils.create_equity_curve_from_matched_trades
-    """
-    try:
-        # Normalize trades list (accept DataFrame or list of dicts)
-        if isinstance(trades, pd.DataFrame):
-            trades_list = trades.to_dict('records')
-        else:
-            trades_list = trades or []
-        from plotly_utils import create_equity_curve_from_matched_trades
-        equity_curve = create_equity_curve_from_matched_trades(trades_list, start_capital, df, trade_on)
-        return equity_curve
-    except Exception:
-        # Fallback to constant equity to avoid hard failure
-        try:
-            return [start_capital] * (len(df) if df is not None else 0)
-        except Exception:
-            return []
-
-def debug_equity_alignment(df, equity_curve):
-    '''
-    Prüft, ob die Equity-Kurve exakt die gleiche Länge und Zeitachse wie df.index hat.
-    Gibt Warnungen bei Diskrepanzen.
-    '''
-    n_df = len(df.index)
-    n_eq = len(equity_curve)
-    print(f"   ✅ Candlestick-Zeilen: {n_df}")
-    print(f"   ✅ Equity-Zeilen:      {n_eq}")
-
-    if n_df != n_eq:
-        print(f"   ❌ Unterschiedliche Länge! Equity-Kurve hat {n_eq - n_df:+d} Zeilen Abweichung.")
-        return False
-
-    mismatches = []
-    for i, dt in enumerate(df.index):
-        if pd.isna(dt) or not isinstance(dt, pd.Timestamp):
-            mismatches.append((i, "NaT oder kein Timestamp in df.index"))
-
-    if mismatches:
-        print(f"   ⚠️ {len(mismatches)} problematische Zeilen:")
-        for i, reason in mismatches[:5]:
-            print(f"     Zeile {i}: {reason}")
-        return False
-    else:
-        print("   ✅ Alles ok. Index ist zeilensynchron und verwendbar für Plotly.")
-        return True
-
-def main_backtest_with_analysis():
-    """
-    Hauptfunktion für Enhanced Backtest Analysis mit realistischen Equity Curves
-    """
-    try:
-        # ✅ IMPORT CRYPTO_TICKERS AT THE TOP OF THE FUNCTION
-        from crypto_tickers import crypto_tickers
-        
-        print("🚀 Starting Enhanced Backtest Analysis...")
-        print(f"📅 Backtest Period: {backtest_years} years")
-        print(f"🎯 Optimization Range: 25% - 95%")
-        
-        # ✅ SHOW CORRECT INITIAL CAPITALS, NOT 10000!
-        print(f"💰 Initial Capitals:")
-        for symbol, config in crypto_tickers.items():
-            print(f"   {symbol}: €{config['initialCapitalLong']}")
-        
-        all_results = {}
-        successful_symbols = []
-        failed_symbols = []
-        
-        # Process each crypto ticker
-        for symbol, config in crypto_tickers.items():
-            print(f"\n{'='*60}")
-            print(f"🔄 Processing {symbol}...")
-            
-            try:
-                result = run_backtest(symbol, config)
-                
-                if result and result != False:
-                    all_results[symbol] = result
-                    successful_symbols.append(symbol)
-                    print(f"✅ Successfully processed {symbol}")
-                else:
-                    failed_symbols.append(symbol)
-                    print(f"❌ Failed to process {symbol}")
-                    
-            except Exception as e:
-                print(f"❌ Error processing {symbol}: {e}")
-                failed_symbols.append(symbol)
-                continue
-        
-        # Summary Report
-        print(f"\n{'='*80}")
-        print("📊 BACKTEST SUMMARY")
-        print(f"{'='*80}")
-        print(f"✅ Successfully processed {len(successful_symbols)} symbols")
-        if successful_symbols:
-            print(f"   Symbols: {', '.join(successful_symbols)}")
-        
-        if failed_symbols:
-            print(f"❌ Failed symbols ({len(failed_symbols)}): {', '.join(failed_symbols)}")
-        
-        if not all_results:
-            print("❌ No successful backtests completed!")
-            return False, {}
-        
-        # Portfolio statistics
-        print(f"\n📊 Generating comprehensive analysis...")
-        portfolio_stats = {}
-        total_initial_capital = 0
-        total_final_capital = 0
-        
-        for symbol, result in all_results.items():
-            if isinstance(result, dict) and 'config' in result:
-                initial_cap = result['config'].get('initial_capital', 10000)
-                total_initial_capital += initial_cap
-                
-                if 'trade_statistics' in result:
-                    stats = result['trade_statistics']
-                    if '💼 Final Capital' in stats:
-                        try:
-                            final_cap_str = stats['💼 Final Capital'].replace('€', '').replace(',', '')
-                            final_capital = float(final_cap_str)
-                            total_final_capital += final_capital
-                        except:
-                            total_final_capital += initial_cap
-                    else:
-                        total_final_capital += initial_cap
-                else:
-                    total_final_capital += initial_cap
-        
-        portfolio_stats['Total Initial Capital'] = f"€{total_initial_capital:,.2f}"
-        portfolio_stats['Total Final Capital'] = f"€{total_final_capital:,.2f}"
-        portfolio_stats['Total Portfolio Return'] = f"{((total_final_capital/total_initial_capital-1)*100):.2f}%" if total_initial_capital > 0 else "0.00%"
-        portfolio_stats['Number of Assets'] = len(all_results)
-        
-        print(f"\n💼 PORTFOLIO SUMMARY:")
-        for key, value in portfolio_stats.items():
-            print(f"   {key}: {value}")
-        
-        # Detailed symbol analysis
-        print(f"\n📈 DETAILED SYMBOL ANALYSIS:")
-        for symbol, result in all_results.items():
-            if isinstance(result, dict):
-                print(f"\n📊 {symbol}:")
-                if 'trade_statistics' in result:
-                    for key, value in result['trade_statistics'].items():
-                        print(f"   {key}: {value}")
-                
-                if 'dataset_info' in result:
-                    info = result['dataset_info']
-                    print(f"   📅 Period: {info['start_date']} to {info['end_date']} ({info['total_days']} days)")
-                
-                if 'optimal_parameters' in result:
-                    params = result['optimal_parameters']
-                    pnl_info = ""
-                    if 'optimal_pnl' in params:
-                        pnl_info = f", PnL=€{params['optimal_pnl']:.2f}"
-                    print(f"   🎯 Optimal Parameters: Past_Window={params.get('optimal_past_window', 'N/A')}, Trade_Window={params.get('optimal_trade_window', 'N/A')}{pnl_info}")
-        
-        # Save CSV
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        portfolio_csv_path = f"portfolio_summary_{timestamp}.csv"
-        
-        summary_data = []
-        for symbol, result in all_results.items():
-            if isinstance(result, dict):
-                row = {
-                    'Symbol': symbol,
-                    'Initial_Capital': result.get('config', {}).get('initial_capital', 0),
-                    'Support_Levels': result.get('support_levels', 0),
-                    'Resistance_Levels': result.get('resistance_levels', 0)
-                }
-                summary_data.append(row)
-        
-        if summary_data:
-            df_summary = pd.DataFrame(summary_data)
-            df_summary.to_csv(portfolio_csv_path, index=False)
-            print(f"📁 Portfolio Summary saved: {portfolio_csv_path}")
-        
-        # Generate HTML Report
-        try:
-            generate_combined_report_from_memory(all_results, portfolio_csv_path)
-            print(f"📄 HTML Report generated")
-        except Exception as e:
-            print(f"⚠️ HTML report error: {e}")
-        
-        # ✅ CHARTS ERSTELLEN - MIT REALISTISCHEN EQUITY CURVES
-        print(f"\n🌐 Creating Interactive Charts with Real Equity Curves...")
-        chart_count = 0
-        
-        for symbol, result in all_results.items():
-            try:
-                if not isinstance(result, dict) or 'df_bt' not in result:
-                    continue
-                
-                print(f"\n📊 Creating chart for {symbol}...")
-                
-                # Data preparation
-                df = result['df_bt'].copy()
-                ext_signals = result.get('ext_signals', pd.DataFrame())
-                matched_trades = result.get('matched_trades', pd.DataFrame())
-                
-                # Extract Support/Resistance
-                support_series = pd.Series(dtype=float)
-                resistance_series = pd.Series(dtype=float)
-                
-                if not ext_signals.empty:
-                    # Support levels
-                    support_data = ext_signals[ext_signals['Supp/Resist'] == 'support']
-                    if not support_data.empty:
-                        support_dates = pd.to_datetime(support_data['Date high/low'])
-                        support_levels = support_data['Level high/low'].values
-                        support_series = pd.Series(support_levels, index=support_dates)
-                    
-                    # Resistance levels
-                    resistance_data = ext_signals[ext_signals['Supp/Resist'] == 'resistance']
-                    if not resistance_data.empty:
-                        resistance_dates = pd.to_datetime(resistance_data['Date high/low'])
-                        resistance_levels = resistance_data['Level high/low'].values
-                        resistance_series = pd.Series(resistance_levels, index=resistance_dates)
-                
-                # Add buy/sell signals to DataFrame
-                df['buy_signal'] = 0
-                df['sell_signal'] = 0
-                
-                if not ext_signals.empty:
-                    # Detect action column used by extended signals
-                    action_col = 'Long Action' if 'Long Action' in ext_signals.columns else ('Action' if 'Action' in ext_signals.columns else None)
-                    # Buy signals
-                    if action_col is not None:
-                        try:
-                            norm_action = ext_signals[action_col].astype(str).str.lower()
-                            buy_signals = ext_signals[norm_action == 'buy']
-                        except Exception:
-                            buy_signals = pd.DataFrame()
-                    else:
-                        buy_signals = pd.DataFrame()
-                    for _, row in buy_signals.iterrows():
-                        try:
-                            trade_date = pd.to_datetime(row['Long Date detected'])
-                            if trade_date in df.index:
-                                df.loc[trade_date, 'buy_signal'] = 1
-                        except:
-                            continue
-                    
-                    # Sell signals
-                    if action_col is not None:
-                        try:
-                            norm_action = ext_signals[action_col].astype(str).str.lower()
-                            sell_signals = ext_signals[norm_action == 'sell']
-                        except Exception:
-                            sell_signals = pd.DataFrame()
-                    else:
-                        sell_signals = pd.DataFrame()
-                    for _, row in sell_signals.iterrows():
-                        try:
-                            trade_date = pd.to_datetime(row['Long Date detected'])
-                            if trade_date in df.index:
-                                df.loc[trade_date, 'sell_signal'] = 1
-                        except:
-                            continue
-                
-                # Get the ticker config to extract the correct initial capital and trade_on
-                from crypto_tickers import crypto_tickers
-                ticker_config = crypto_tickers.get(symbol, {})
-                initial_capital = ticker_config.get('initialCapitalLong', 10000)
-                trade_on = ticker_config.get('trade_on', 'Close')  # ✅ Get trade_on mode
-                
-                print(f"💰 DEBUG: Using Initial Capital €{initial_capital} for {symbol} (from crypto_tickers)")
-                print(f"📊 DEBUG: Trade Mode = {trade_on} (from crypto_tickers)")
-                
-                # 1. Strategy Equity Curve aus matched_trades
-                if not matched_trades.empty:
-                    print(f"   💼 Computing strategy equity curve from {len(matched_trades)} trades...")
-                    
-                    # Map matched_trades to expected keys for create_equity_curve_from_matched_trades
-                    trades_list = []
-                    for _, trade in matched_trades.iterrows():
-                        trade_dict = {
-                            'buy_date': trade.get('Entry Date'),
-                            'sell_date': trade.get('Exit Date'),
-                            'buy_price': trade.get('Entry Price'),
-                            'sell_price': trade.get('Exit Price'),
-                            'shares': trade.get('Quantity', trade.get('Shares')),
-                            'pnl': trade.get('Net PnL', trade.get('PnL')),
-                            'is_open': str(trade.get('Status', '')).upper() == 'OPEN'
-                        }
-                        trades_list.append(trade_dict)
-                    
-                    # Debug first trade mapping
-                    if trades_list:
-                        ft = trades_list[0]
-                        print(f"   🔍 First mapped trade: buy_date={ft['buy_date']}, sell_date={ft['sell_date']}, shares={ft['shares']}")
-                    
-                    # Compute Strategy Equity Curve with daily function and correct trade_on
-                    equity_curve = create_equity_curve_from_matched_trades(trades_list, initial_capital, df, trade_on)
-                    
-                    # Debug equity alignment (TEMPORARILY DISABLED)
-                    # equity_ok = debug_equity_alignment(df, equity_curve)
-                    equity_ok = True  # FORCE ACCEPTANCE
-                    
-                    if not equity_ok:
-                        print(f"   ⚠️ Using fallback equity curve")
-                        equity_curve = [initial_capital] * len(df)
-                else:
-                    print(f"   ⚠️ No matched trades - using constant equity")
-                    equity_curve = [initial_capital] * len(df)
-                
-                # 2. ✅ BUY & HOLD EQUITY CURVE
-                print(f"   📈 Computing buy & hold equity curve...")
-                buyhold_curve = []  # ✅ INITIALISIERE HIER!
-                
-                if len(df) > 0 and "Close" in df.columns:
-                    start_price = df['Close'].iloc[0]
-                    if start_price > 0:
-                        for price in df['Close']:
-                            current_return = price / start_price
-                            buyhold_curve.append(initial_capital * current_return)
-                        
-                        # Debug buy & hold alignment (TEMPORARILY DISABLED)
-                        # buyhold_ok = debug_equity_alignment(df, buyhold_curve)
-                        buyhold_ok = True  # FORCE ACCEPTANCE OF CORRECT BUY&HOLD
-                        
-                        if not buyhold_ok:
-                            buyhold_curve = [initial_capital] * len(df)
-                    else:
-                        buyhold_curve = [initial_capital] * len(df)
-                else:
-                    buyhold_curve = [initial_capital] * len(df)
-                
-                # 3. ✅ STATISTICS
-                final_strategy = equity_curve[-1] if equity_curve else initial_capital
-                final_buyhold = buyhold_curve[-1] if buyhold_curve else initial_capital
-                strategy_return = ((final_strategy / initial_capital - 1) * 100) if initial_capital > 0 else 0
-                buyhold_return = ((final_buyhold / initial_capital - 1) * 100) if initial_capital > 0 else 0
-                
-                print(f"   🟢 Support: {len(support_series)}, 🔴 Resistance: {len(resistance_series)}")
-                print(f"   🔵 Buy: {len(df[df['buy_signal'] == 1])}, 🟠 Sell: {len(df[df['sell_signal'] == 1])}")
-                print(f"   💼 Strategy: €{initial_capital:,.0f} → €{final_strategy:,.0f} ({strategy_return:+.1f}%)")
-                print(f"   📈 Buy&Hold: €{initial_capital:,.0f} → €{final_buyhold:,.0f} ({buyhold_return:+.1f}%)")
-                
-                # 4. ✅ CHART ERSTELLEN
-                chart_success = plotly_combined_chart_and_equity(
-                    df=df,
-                    standard_signals=ext_signals,
-                    support=support_series,
-                    resistance=resistance_series,
-                    equity_curve=equity_curve,
-                    buyhold_curve=buyhold_curve,
-                    ticker=symbol,
-                    backtest_years=backtest_years,
-                    initial_capital=initial_capital  # ✅ ADD CORRECT INITIAL CAPITAL
-                )
-                
-                if chart_success:
-                    print(f"   ✅ Chart created for {symbol}")
-                    chart_count += 1
-                    time.sleep(2)  # Pause zwischen Charts
-                else:
-                    print(f"   ❌ Chart failed for {symbol}")
-                    
-            except Exception as e:
-                print(f"   ❌ Chart error for {symbol}: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
-        
-        print(f"\n🎯 Created {chart_count} interactive charts with real equity curves!")
-        print(f"📊 Each chart includes:")
-        print(f"   🟢 Support levels (green circles)")
-        print(f"   🔴 Resistance levels (red X)")
-        print(f"   🔵 Buy signals (blue triangles ↑)")
-        print(f"   🟠 Sell signals (orange triangles ↓)")
-        print(f"   💼 Strategy equity curve (real trades)")
-        print(f"   📈 Buy & Hold comparison")
-        
-        # Trading Mode Info
-        if TRADING_MODE == 'paper_trading':
-            print(f"\n📝 PAPER TRADING MODE - No real orders executed")
-        
-        return all_results, portfolio_stats
-        
-    except Exception as e:
-        print(f"❌ Main backtest failed: {e}")
-        import traceback
+        print(f"❌ Error loading data for {symbol}: {e}")
         traceback.print_exc()
-        return False, {}
+        return None
 
 def run_live_backtest_analysis():
     """
@@ -1867,6 +1373,8 @@ def run_backtest(symbol, config):
             return False
 
         print(f"Dataset: {len(df)} Zeilen ({df.index[0].date()} bis {df.index[-1].date()})")
+        if os.environ.get("STABLE_BACKTEST", "0") == "1":
+            print("🔒 Stable mode ON (STABLE_BACKTEST=1). No partial current-day bar included.")
         
         # ✅ CREATE BACKTEST FRAME (25% - 95% of data)
         df_bt = create_backtest_frame(df, backtesting_begin, backtesting_end)
@@ -1874,6 +1382,8 @@ def run_backtest(symbol, config):
             print(f"❌ Backtest Frame creation failed for {symbol}")
             return False
 
+        # Alias for clarity (user referred to df_tw)
+        df_tw = df_bt
         print(f"📊 Backtest Frame: {len(df_bt)} Zeilen ({df_bt.index[0].date()} bis {df_bt.index[-1].date()})")
         print(f"📊 Backtest Range: {backtesting_begin}% - {backtesting_end}% der Daten")
 
@@ -1881,32 +1391,62 @@ def run_backtest(symbol, config):
         print(f"\n📊 1. DAILY DATA - TAIL (5 Zeilen) - {symbol}")
         print("="*80)
         print(df.tail().to_string())
-        
-        # Support/Resistance berechnen mit df_bt für Optimierung
-        # print(f"\n📊 Optimiere Parameter für {symbol}...")  # ✅ Print auskommentiert
-        optimal_results = optimize_parameters(df_bt, symbol)  # ✅ Optimierung läuft weiter
-        
+
+        # Parameteroptimierung nur auf Slice
+        optimal_results = optimize_parameters(df_bt, symbol)
         optimal_past_window = optimal_results.get('optimal_past_window', 10)
         optimal_trade_window = optimal_results.get('optimal_trade_window', 1)
-        
-        # print(f"\n📊 Verwende OPTIMALE Parameter für {symbol}: past_window={optimal_past_window}, trade_window={optimal_trade_window}")  # ✅ Print auskommentiert
-        
-        # Support/Resistance mit optimalen Parametern auf kompletten df berechnen
-        supp_full, res_full = calculate_support_resistance(df, optimal_past_window, optimal_trade_window, verbose=False, ticker=symbol)
-        
-        # 2. BACKTEST RESULTS MIT OPTIMALEN PARAMETERN
+
+        # =============================
+        # PARAMETER ANWENDUNG – SLICE
+        # =============================
+        print(f"\n🔧 Applying optimal parameters on BACKTEST SLICE (in-sample) {backtesting_begin}%–{backtesting_end}% …")
+        supp_slice, res_slice = calculate_support_resistance(
+            df_bt, optimal_past_window, optimal_trade_window, verbose=False, ticker=symbol
+        )
+        print(f"   ➜ Slice Support Levels: {len(supp_slice)}, Resistance Levels: {len(res_slice)}")
+
+        ext_slice = assign_long_signals_extended(
+            supp_slice, res_slice, df_bt, optimal_trade_window, "1d", trade_on.title()
+        )
+        if ext_slice is None or ext_slice.empty:
+            print("   ⚠️ No slice extended signals produced")
+        else:
+            print(f"   ➜ Slice Extended Signals: {len(ext_slice)}")
+
+        matched_trades_slice = simulate_matched_trades(
+            ext_slice if ext_slice is not None else pd.DataFrame(),
+            initial_capital,
+            commission_rate,
+            df_bt,
+            order_round_factor,
+            trade_on.title()
+        ) if ext_slice is not None and not ext_slice.empty else pd.DataFrame()
+        slice_stats = calculate_trade_statistics(ext_slice, matched_trades_slice, initial_capital) if not matched_trades_slice.empty else {}
+
+        # ======================================
+        # PARAMETER ANWENDUNG – VOLLER DATENSATZ
+        # ======================================
+        print(f"\n🔧 Applying optimal parameters on FULL DATASET (trading over full df)…")
+        supp_full, res_full = calculate_support_resistance(
+            df, optimal_past_window, optimal_trade_window, verbose=False, ticker=symbol
+        )
+
+        # 2. BACKTEST RESULTS MIT OPTIMALEN PARAMETERN (FULL)
         print(f"\n📊 2. BACKTEST RESULTS - {symbol}")
         print("="*80)
         print(f"   📈 Optimal Past Window: {optimal_past_window}")
         print(f"   📈 Optimal Trade Window: {optimal_trade_window}")
-        print(f"   📊 Support Levels Found: {len(supp_full)}")
-        print(f"   📊 Resistance Levels Found: {len(res_full)}")
+        print(f"   📊 Support Levels (FULL): {len(supp_full)} | (SLICE): {len(supp_slice)}")
+        print(f"   📊 Resistance Levels (FULL): {len(res_full)} | (SLICE): {len(res_slice)}")
         print(f"   📅 Analysis Period: {df.index[0].date()} to {df.index[-1].date()}")
         print(f"   📊 Total Trading Days: {len(df)}")
-        
+
         # Extended Signals generieren mit kompletten df
-        print(f"\n📊 Generiere Extended Signals für {symbol}...")
-        ext_full = assign_long_signals_extended(supp_full, res_full, df, optimal_trade_window, "1d", trade_on.title())
+        print(f"\n📊 Generiere Extended Signals (FULL) für {symbol}...")
+        ext_full = assign_long_signals_extended(
+            supp_full, res_full, df, optimal_trade_window, "1d", trade_on.title()
+        )
         
         if ext_full is None or ext_full.empty:
             print(f"❌ Keine Extended Signals für {symbol}")
@@ -1937,7 +1477,7 @@ def run_backtest(symbol, config):
             print(f"⚠️ Could not normalize extended signals: {_norm_err}")
         
         # 3. EXTENDED TRADES - KOMPLETTE TABELLE
-        print(f"\n📊 3. EXTENDED TRADES - KOMPLETTE TABELLE ({len(ext_full)} Trades) - {symbol}")
+        print(f"\n📊 3. EXTENDED TRADES - KOMPLETTE TABELLE (FULL {len(ext_full)} Trades) - {symbol}")
         print("="*120)
         if not ext_full.empty:
             display_df = ext_full.copy()
@@ -1948,9 +1488,9 @@ def run_backtest(symbol, config):
             print(display_df.to_string(index=True, max_rows=None))
         else:
             print("❌ Keine Extended Trades vorhanden")
-        
+
         # 4. MATCHED TRADES - SIMULATION (mit kompletten df)
-        print(f"\n📊 4. MATCHED TRADES - SIMULATION - {symbol}")
+        print(f"\n📊 4. MATCHED TRADES - SIMULATION (FULL) - {symbol}")
         print("="*120)
         matched_trades = simulate_matched_trades(ext_full, initial_capital, commission_rate, df, order_round_factor, trade_on.title())
         if not matched_trades.empty:
@@ -1959,11 +1499,15 @@ def run_backtest(symbol, config):
             print("❌ Keine Matched Trades generiert")
         
         # 5. TRADE STATISTICS
-        print(f"\n📊 5. TRADE STATISTICS - {symbol}")
+        print(f"\n📊 5. TRADE STATISTICS (FULL) - {symbol}")
         print("="*80)
         trade_stats = calculate_trade_statistics(ext_full, matched_trades, initial_capital)
         for key, value in trade_stats.items():
             print(f"   {key}: {value}")
+        if slice_stats:
+            print(f"\n📊 📌 SLICE TRADE STATISTICS (In-Sample {backtesting_begin}%–{backtesting_end}%)")
+            for key, value in slice_stats.items():
+                print(f"   {key}: {value}")
         
         # Tabelle anzeigen
         display_extended_trades_table(ext_full, symbol)
@@ -2034,19 +1578,33 @@ def run_backtest(symbol, config):
             print(f"⚠️ Fallback Buy&Hold Curve: konstant €{initial_capital:.0f}")
         
         # Result erstellen mit korrekten Informationen
+        # Slice final capital (if available)
+        slice_final_cap = None
+        if slice_stats and '💼 Final Capital' in slice_stats:
+            try:
+                slice_final_cap = float(slice_stats['💼 Final Capital'].replace('€','').replace(',',''))
+            except Exception:
+                slice_final_cap = None
+
         result = {
             'success': True,
             'symbol': symbol,
             'config': config,
-            'df': df,  # ✅ FIXED: Kompletter DataFrame für Charts
-            'df_bt': df,  # ✅ Kompletter DataFrame für Trading (keep for compatibility)
-            'backtest_range': {  # ✅ Info über df_bt Range
+            'df': df,
+            'df_bt': df_bt,
+            'backtest_range': {
                 'start_percent': backtesting_begin,
                 'end_percent': backtesting_end,
                 'start_date': df_bt.index[0].date(),
                 'end_date': df_bt.index[-1].date(),
                 'days': len(df_bt)
             },
+            'slice_support_levels': len(supp_slice),
+            'slice_resistance_levels': len(res_slice),
+            'slice_ext_signals': ext_slice,
+            'slice_matched_trades': matched_trades_slice,
+            'slice_trade_statistics': slice_stats,
+            'slice_final_capital': slice_final_cap,
             'dataset_info': {
                 'total_days': len(df),
                 'start_date': df.index[0].date(),
@@ -2061,230 +1619,71 @@ def run_backtest(symbol, config):
             'trade_statistics': trade_stats,
             'support_levels': len(supp_full),
             'resistance_levels': len(res_full),
-            'optimal_past_window': optimal_past_window,    # ADD optimal parameters
-            'optimal_trade_window': optimal_trade_window,   # ADD optimal parameters
-            'final_capital': final_capital_value,           # ✅ ADD FINAL CAPITAL
-            'equity_curve': equity_curve_values,            # ✅ ADD EQUITY CURVE
-            'buyhold_curve': buyhold_curve_values           # ✅ ADD BUYHOLD CURVE!
+            'optimal_past_window': optimal_past_window,
+            'optimal_trade_window': optimal_trade_window,
+            'final_capital': final_capital_value,
+            'equity_curve': equity_curve_values,
+            'buyhold_curve': buyhold_curve_values
         }
-        
-                # ✅ EXTENDED TRADES LISTE DER LETZTEN 2 WOCHEN
+
         print(f"\n📅 TRADES DER LETZTEN 2 WOCHEN - {symbol}")
         print("="*80)
         if ext_full is not None and not ext_full.empty:
-            print(f"🔍 DEBUG: Extended Trades Spalten: {list(ext_full.columns)}")
-            print(f"🔍 DEBUG: Anzahl Extended Trades: {len(ext_full)}")
-            print(f"🔍 DEBUG: Letzte 5 Extended Trades Daten:")
-            print(ext_full.tail(5)[['Action', 'Long Signal Extended']].to_string())
-            print(f"🔍 DEBUG: Index der letzten 5 Trades:")
-            print(list(ext_full.tail(5).index))
-            print(f"🔍 DEBUG: Original DataFrame index type: {type(df.index[0])}")
-            print(f"🔍 DEBUG: Latest dates from original df:")
-            print(df.tail(5).index.tolist())
-            
-            # Nimm die 14 NEUESTEN Trades (nicht die ältesten)
-            last_14_days_count = min(14, len(ext_full))
-            recent_ext_trades = ext_full.tail(last_14_days_count).copy()
-            # Für Anzeige umkehren: Neueste zuerst
-            recent_ext_trades_display = recent_ext_trades.iloc[::-1]
-            
-            if not recent_ext_trades.empty:
-                # Baue eine Liste der tatsächlich anzuzeigenden Trades (nur BUY/SELL) mit Datum
-                computed_rows = []
-                for row_idx, trade in recent_ext_trades_display.iterrows():
-                    # Bestimme das Trade-Datum robust, unabhängig von einer 'Date'-Spalte
-                    trade_date = "N/A"
-                    current_trade_date = None
-                    try:
-                        # Falls row_idx ein Integer-Positionsindex ist
-                        if isinstance(row_idx, (int, np.integer)):
-                            dt = df.index[row_idx]
-                        else:
-                            # Falls row_idx bereits ein Timestamp oder Datum ist
-                            dt = pd.to_datetime(row_idx)
-                        # Normalisieren und formattieren
-                        if isinstance(dt, pd.Timestamp):
-                            trade_date = dt.strftime('%Y-%m-%d')
-                            current_trade_date = dt.date()
-                        else:
-                            trade_date = str(dt)
-                    except Exception:
-                        trade_date = f"Row-{row_idx}"
-                    
-                    # Extended trades structure
-                    action = trade.get('Long Action', 'N/A')
-                    if action in ['N/A', None, '']:
-                        action = trade.get('Action', 'N/A')
-                    
-                    # Filter nur echte Trades (BUY/SELL), keine None
-                    if str(action).lower() not in ['buy', 'sell']:
-                        continue  # Überspringe Nicht-Trades
-                    
-                    price = trade.get('Level Close', trade.get('Close', 0))
-                    
-                    today = datetime.now().date()
-                    if current_trade_date is None:
-                        try:
-                            # Fallback via df.index wenn möglich
-                            if isinstance(row_idx, (int, np.integer)):
-                                current_trade_date = df.index[row_idx].date()
-                            else:
-                                current_trade_date = pd.to_datetime(row_idx).date()
-                        except Exception:
-                            current_trade_date = datetime(2000, 1, 1).date()  # sicherer Default
-                    
-                    type_desc = "Artificial" if current_trade_date == today else "Limit"
-                    
-                    if str(action).lower() == 'buy':
-                        action_emoji = "🔓 BUY"
-                    elif str(action).lower() == 'sell':
-                        action_emoji = "🔒 SELL"
-                    else:
-                        action_emoji = f"📊 {action}"
-                    
-                    computed_rows.append({
-                        'symbol': symbol,
-                        'action_emoji': action_emoji,
-                        'trade_date_str': trade_date,
-                        'trade_date': current_trade_date,
-                        'type_desc': type_desc,
-                        'price': float(price)
-                    })
-
-                # Filter: Rollierendes 15-Tage-Fenster (ankert am letzten verfügbaren DF-Datum)
-                try:
-                    latest_df_date = df.index.max().date() if len(df.index) > 0 else datetime.now().date()
-                except Exception:
-                    latest_df_date = datetime.now().date()
-                ref_date = min(datetime.now().date(), latest_df_date)
-                cutoff_date = ref_date - timedelta(days=15)
-                window_rows = [
-                    r for r in computed_rows
-                    if isinstance(r['trade_date'], type(ref_date)) and (cutoff_date <= r['trade_date'] <= ref_date)
-                ]
-                # Sortiere neueste zuerst und nimm die neuesten 14
-                window_rows.sort(key=lambda r: r['trade_date'], reverse=True)
-                printed_rows = window_rows[:14]
-
-                # Überschrift mit tatsächlicher Anzahl
-                print(f"📈 {len(printed_rows)} Extended Trades in den letzten 15 Tagen (neueste zuerst):")
-                print("-" * 80)
-
-                for i, row in enumerate(printed_rows, start=1):
-                    print(f"  {i}. {row['symbol']} | {row['action_emoji']} | {row['trade_date_str']} | Type: {row['type_desc']} | Price: {row['price']:.4f}")
-                    
-                # Für HTML Report - richtige Tabelle erstellen
-                html_content = f"""
-                <h3>📅 Extended Trades der letzten 2 Wochen ({len(recent_ext_trades)} Trades, neueste zuerst)</h3>
-                <table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;">
-                    <thead style="background-color: #f2f2f2;">
-                        <tr>
-                            <th>Nr.</th>
-                            <th>Symbol</th>
-                            <th>Action</th>
-                            <th>Trade Date</th>
-                            <th>Type</th>
-                            <th>Price</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                """
-                
-                for i, row in enumerate(printed_rows, start=1):
-                    html_content += f"""
-                        <tr>
-                            <td>{i}</td>
-                            <td>{row['symbol']}</td>
-                            <td>{row['action_emoji']}</td>
-                            <td>{row['trade_date_str']}</td>
-                            <td>{row['type_desc']}</td>
-                            <td>{row['price']:.4f}</td>
-                        </tr>
-                    """
-                
-                html_content += """
-                    </tbody>
-                </table>
-                """
-                
-                result['weekly_trades_html'] = html_content
-                result['weekly_trades_count'] = len(recent_ext_trades)
-            else:
-                print("📈 Keine Extended Trades in den letzten 2 Wochen")
-                result['weekly_trades_html'] = "<h3>Keine Extended Trades in den letzten 2 Wochen</h3>"
-                result['weekly_trades_count'] = 0
+            recent_ext_trades = ext_full.tail(50)
+            print(recent_ext_trades[['Action','Long Signal Extended']].tail(10).to_string())
         else:
             print("⚠️ Keine Extended Trades verfügbar")
-            result['weekly_trades_html'] = ""
-            result['weekly_trades_count'] = 0
 
         return result
-        
+
     except Exception as e:
         print(f"❌ Fehler für {symbol}: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
 def optimize_parameters(df, symbol):
-    """
-    Verwendet die existierende berechne_best_p_tw_long Funktion
-    mit ticker-spezifischen Parametern aus crypto_tickers.py und config.py
+    """Runs brute-force optimization on the provided dataframe (slice df_bt).
+    Returns optimal past & trade window maximizing final capital.
     """
     try:
-        # print(f"🔍 Optimiere Parameter für {symbol}...")
-        
-        # Lade ticker-spezifische Konfiguration
         from crypto_tickers import crypto_tickers
         from config import COMMISSION_RATE, MIN_COMMISSION
-        
+
         ticker_config = crypto_tickers.get(symbol, {})
         if not ticker_config:
             print(f"⚠️ Ticker {symbol} nicht in crypto_tickers gefunden, verwende Defaults")
-        
-        # Ticker-spezifische Fallbacks basierend auf Symbol
+
         default_capitals = {
             'BTC-EUR': 5000,
-            'ETH-EUR': 3000, 
+            'ETH-EUR': 3000,
             'DOGE-EUR': 2000,
             'SOL-EUR': 2000,
             'LINK-EUR': 1500,
             'XRP-EUR': 1000
         }
         default_capital = default_capitals.get(symbol, 5000)
-        
-        # Ticker-spezifische Config für Optimierung
+
         cfg = {
             'initial_capital': ticker_config.get('initialCapitalLong', default_capital),
             'commission_rate': COMMISSION_RATE,
             'min_commission': MIN_COMMISSION,
             'order_round_factor': ticker_config.get('order_round_factor', 0.01)
         }
-        
+
         print(f"   💰 Initial Capital: €{cfg['initial_capital']}")
         print(f"   💸 Commission Rate: {cfg['commission_rate']*100}%")
         print(f"   🔧 Round Factor: {cfg['order_round_factor']}")
-        
-        # Verwende kompletten Dataset für Optimierung
+
         start_idx = 0
         end_idx = len(df)
-        
-        # Nutze deine existierende Optimierungsfunktion
-        p, tw = berechne_best_p_tw_long(  # ✅ p, tw statt optimal_past_window, optimal_trade_window
-            df, cfg, start_idx, end_idx, verbose=True, ticker=symbol
-        )
-        
-        # print(f"✅ Optimal: Past={p}, Trade={tw}")  # ✅ Print auskommentiert
-        
+        p, tw = berechne_best_p_tw_long(df, cfg, start_idx, end_idx, verbose=True, ticker=symbol)
         return {
-            'optimal_past_window': p,      # ✅ p -> optimal_past_window
-            'optimal_trade_window': tw,    # ✅ tw -> optimal_trade_window
+            'optimal_past_window': p,
+            'optimal_trade_window': tw,
             'method': 'berechne_best_p_tw_long'
         }
-        
     except Exception as e:
         print(f"❌ Parameter-Optimierung fehlgeschlagen: {e}")
-        # Fallback mit gültigen Werten (nicht 0!)
         return {
             'optimal_past_window': 5,
             'optimal_trade_window': 2,
@@ -2453,59 +1852,30 @@ def calculate_trade_statistics(ext_full, matched_trades, initial_capital):
 
 # ✅ FIX 3: Main-Block korrigieren
 if __name__ == "__main__":
-    print("🚀 Starting Crypto Backtesting with Enhanced Analysis...")
-    
-    # Configuration anzeigen
-    print(f"📊 Configuration:")
-    print(f"   Backtest Period: {backtest_years} Jahr(e)")
-    print(f"   Commission Rate: {COMMISSION_RATE*100}%")
-    # CSV refresh to mirror live runner behavior
-    try:
-        from smart_csv_update import smart_update_csv_files
-        print("\n🧠 Intelligent CSV update (only necessary data)...")
-        smart_update_csv_files()
-        print("✅ Smart CSV update completed!")
-    except Exception as e:
-        print(f"❌ Smart CSV update failed, falling back to full update: {e}")
+    print("🚀 Running simple backtests for all configured tickers...")
+    any_fail = False
+    for sym, cfg in crypto_tickers.items():
         try:
-            from get_real_crypto_data import update_csv_files_with_realtime_data
-            print("🔄 Fallback: Full CSV update...")
-            update_csv_files_with_realtime_data()
-            print("✅ Fallback CSV update completed!")
-        except Exception as e2:
-            print(f"❌ Both update methods failed: {e2}")
-    
-    # Crypto Tickers anzeigen
-    print(f"\n💰 CRYPTO TICKERS CONFIGURED ({len(crypto_tickers)}):")
-    for symbol, config in crypto_tickers.items():
-        # ✅ Sichere Anzeige der Config
-        initial_cap = config.get('initial_capital', 'N/A')
-        trade_on = config.get('trade_on', 'N/A')
-        commission = config.get('commission_rate', COMMISSION_RATE)
-        print(f"   {symbol}: Capital={initial_cap}, Trade on={trade_on.upper()}, Commission={commission*100}%")
-    
-    print(f"\n🔄 Starting main backtest analysis...")
-    
-    # ✅ Korrekte Unpacking-Syntax
-    try:
-        backtest_results, trading_analysis = main_backtest_with_analysis()
-        success = backtest_results is not False
-    except Exception as e:
-        print(f"❌ Error during backtest execution: {e}")
-        success = False
-        backtest_results = False
-        trading_analysis = {}
-    
-    if success:
-        print("\n" + "="*80)
-        print("🎯 BACKTEST SESSION COMPLETED")
-        print("="*80)
+            ok = run_backtest(sym, cfg)
+            if ok is False:
+                any_fail = True
+        except Exception as e:
+            any_fail = True
+            print(f"❌ Fehler beim Backtest {sym}: {e}")
         print(f"   📅 Session Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"   📊 Configuration: {backtest_years} years")
         print("="*80)
-        print("🚀 Thank you for using Crypto Backtesting Suite!")
-        print("="*80)
+    # Always generate unified report & charts
+    try:
+        print("\n🧪 Generating unified live backtest analysis (charts & HTML report)...")
+        run_live_backtest_analysis()
+    except Exception as e:
+        any_fail = True
+        print(f"⚠️ Unified analysis failed: {e}")
+    if any_fail:
+        print("\n❌ BACKTEST SESSION HAD FAILURES – see above.")
     else:
-        print("\n❌ BACKTEST SESSION FAILED")
-        print("💡 Check the error messages above for details")
+        print("\n✅ All backtests completed successfully.")
+    print("🚀 Thank you for using Crypto Backtesting Suite!")
+    print("="*80)
 
