@@ -12,7 +12,7 @@ Writes updates back to <SYMBOL>_daily.csv in the project root.
 """
 import argparse
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import pandas as pd
 import yfinance as yf
 
@@ -30,6 +30,9 @@ def load_daily_csv(symbol: str) -> pd.DataFrame:
     df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
     date_col = 'Date' if 'Date' in df.columns else 'date'
     df[date_col] = pd.to_datetime(df[date_col])
+    # Normalize to midnight naive dates
+    df[date_col] = df[date_col].dt.tz_localize(None)
+    df[date_col] = df[date_col].dt.normalize()
     df.set_index(date_col, inplace=True)
     df = df.sort_index()
     # keep only relevant cols
@@ -49,34 +52,51 @@ def fetch_daily_bar(symbol: str, day: pd.Timestamp):
     # Yahoo daily is date-range exclusive on end; request day -> day+1
     start = day.strftime('%Y-%m-%d')
     end = (day + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+    # Try method 1: download with explicit day range
     df = yf.download(symbol, start=start, end=end, interval='1d', auto_adjust=True, progress=False)
-    if df is None or df.empty:
-        return None
-    # Some YF returns tz-aware index; take first row
-    row = df.iloc[0]
-    # Standardize dict
-    return {
-        'Open': float(row['Open']),
-        'High': float(row['High']),
-        'Low': float(row['Low']),
-        'Close': float(row['Close']),
-        'Volume': float(row.get('Volume', 0.0))
-    }
+    if df is not None and not df.empty:
+        row = df.iloc[0]
+        return {
+            'Open': float(row['Open']),
+            'High': float(row['High']),
+            'Low': float(row['Low']),
+            'Close': float(row['Close']),
+            'Volume': float(row.get('Volume', 0.0))
+        }
+    # Try method 2: history(period='5d') and pick exact date
+    try:
+        hist = yf.Ticker(symbol).history(period='7d', interval='1d', auto_adjust=True)
+        if hist is not None and not hist.empty:
+            hist = hist.copy()
+            hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
+            if day in hist.index:
+                row = hist.loc[day]
+                return {
+                    'Open': float(row['Open']),
+                    'High': float(row['High']),
+                    'Low': float(row['Low']),
+                    'Close': float(row['Close']),
+                    'Volume': float(row.get('Volume', 0.0))
+                }
+    except Exception:
+        pass
+    return None
 
 
 def fetch_hourly_ohlc(symbol: str, day: pd.Timestamp):
     # Hourly from day 00:00 to next day 00:00
     start_dt = pd.Timestamp(day.date())
     end_dt = start_dt + pd.Timedelta(days=1)
-    df = yf.download(symbol, start=start_dt.strftime('%Y-%m-%d %H:%M:%S'), end=end_dt.strftime('%Y-%m-%d %H:%M:%S'), interval='60m', auto_adjust=True, progress=False)
-    if df is None or df.empty:
-        return None
-    o = float(df['Open'].iloc[0])
-    h = float(df['High'].max())
-    l = float(df['Low'].min())
-    c = float(df['Close'].iloc[-1])
-    v = float(df['Volume'].sum()) if 'Volume' in df.columns else 0.0
-    return {'Open': o, 'High': h, 'Low': l, 'Close': c, 'Volume': v}
+    for interval in ['60m', '30m', '15m']:
+        df = yf.download(symbol, start=start_dt.strftime('%Y-%m-%d %H:%M:%S'), end=end_dt.strftime('%Y-%m-%d %H:%M:%S'), interval=interval, auto_adjust=True, progress=False)
+        if df is not None and not df.empty:
+            o = float(df['Open'].iloc[0])
+            h = float(df['High'].max())
+            l = float(df['Low'].min())
+            c = float(df['Close'].iloc[-1])
+            v = float(df['Volume'].sum()) if 'Volume' in df.columns else 0.0
+            return {'Open': o, 'High': h, 'Low': l, 'Close': c, 'Volume': v}
+    return None
 
 
 def repair_two_days(symbol: str) -> bool:
@@ -87,7 +107,7 @@ def repair_two_days(symbol: str) -> bool:
         print(f"  ❌ Load daily failed: {e}")
         return False
 
-    today = pd.Timestamp(datetime.now().date())
+    today = pd.Timestamp(datetime.now().date()).normalize()
     yday = today - pd.Timedelta(days=1)
     bby = today - pd.Timedelta(days=2)
 
@@ -104,6 +124,8 @@ def repair_two_days(symbol: str) -> bool:
         if bar is None:
             print("    ❌ Could not fetch hourly either; skipping this day.")
             continue
+        else:
+            print(f"    ✔ Got bar: O={bar['Open']:.4f} H={bar['High']:.4f} L={bar['Low']:.4f} C={bar['Close']:.4f}")
         # Upsert
         if day in daily.index:
             print("    ✎ Replacing existing bar")
@@ -118,6 +140,15 @@ def repair_two_days(symbol: str) -> bool:
     if changed:
         save_daily_csv(symbol, daily)
         print("  ✅ Saved updated daily CSV")
+        try:
+            # Re-open and show last 5 rows for verification
+            ver = load_daily_csv(symbol)
+            tail = ver.tail(5).reset_index()
+            print("  ↪ Last 5 rows after save:")
+            for _, r in tail.iterrows():
+                print(f"    {r['Date'].date()}, {r['Open']}, {r['High']}, {r['Low']}, {r['Close']}, {r['Volume']}")
+        except Exception as _e:
+            print(f"  ⚠️ Post-save verify failed: {_e}")
     else:
         print("  ℹ️ No changes made")
     return changed
