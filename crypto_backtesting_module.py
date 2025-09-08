@@ -132,14 +132,13 @@ def run_live_backtest_analysis():
             except Exception as e2:
                 print(f"❌ Both update methods failed: {e2}")
         
-        # Optional: repair last two daily bars (keep today's artificial)
-        if os.environ.get('REPAIR_RECENT', '0') == '1':
-            try:
-                print("\n🛠️ Repairing recent daily bars (REPAIR_RECENT=1)…")
-                import subprocess, sys
-                subprocess.run([sys.executable, 'repair_recent_daily_data.py'], check=False)
-            except Exception as _rep_err:
-                print(f"⚠️ Repair step failed: {_rep_err}")
+        # Repair last two daily bars (keep today's artificial)
+        try:
+            print("\n🛠️ Repairing recent daily bars…")
+            import subprocess, sys
+            subprocess.run([sys.executable, 'repair_recent_daily_data.py'], check=False)
+        except Exception as _rep_err:
+            print(f"⚠️ Repair step failed: {_rep_err}")
 
         # Run backtests for all tickers
         all_results = {}
