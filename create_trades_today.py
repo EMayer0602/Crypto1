@@ -14,6 +14,7 @@ import os
 import glob
 import json
 from datetime import datetime
+import argparse
 import pandas as pd
 from typing import Optional, List, Dict
 
@@ -63,17 +64,21 @@ def build_orders(df: pd.DataFrame) -> List[Dict]:
 
 
 def main():
-    today = datetime.now().strftime('%Y-%m-%d')
+    parser = argparse.ArgumentParser(description="Create trades_today.json from latest 14-day CSV for a given date (default: today)")
+    parser.add_argument("--date", dest="date", help="YYYY-MM-DD to extract trades for (default: today)")
+    args = parser.parse_args()
+
+    target_date = (args.date or datetime.now().strftime('%Y-%m-%d')).strip()
     latest_csv = find_latest_report()
     if not latest_csv:
         print("No 14-day trades CSV found. Run get_14_day_trades.py first.")
         orders_payload = {"orders": []}
     else:
         try:
-            today_df = load_today_trades(latest_csv, today)
+            today_df = load_today_trades(latest_csv, target_date)
             orders = build_orders(today_df)
             orders_payload = {"orders": orders}
-            print(f"Found {len(orders)} trade(s) for {today} in {os.path.basename(latest_csv)}")
+            print(f"Found {len(orders)} trade(s) for {target_date} in {os.path.basename(latest_csv)}")
         except Exception as e:
             print(f"Error creating trades_today.json: {e}")
             orders_payload = {"orders": []}

@@ -32,7 +32,7 @@ def detailed_optimization_test():
     results = []
     
     for past_window in range(2, 8):  # Smaller range for testing
-        for tw in range(1, 5):
+        for tw in range(1, 6):
             try:
                 print(f'Testing past_window={past_window}, trade_window={tw}', end='... ')
                 

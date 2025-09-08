@@ -13,6 +13,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 import time
+import os
 
 def fix_pair_selection_target(driver, pair_text, strategy="Limit", debug=False, timeout=12):
     """Switch the right-panel pair to pair_text. Verify using the right combobox input value first to avoid false positives.
@@ -22,22 +23,44 @@ def fix_pair_selection_target(driver, pair_text, strategy="Limit", debug=False, 
     dash = (pair_text or '').strip().upper()
     slash = dash.replace('-', '/')
 
-    # 1️⃣ Prefer verifying the right-side combobox input value
+    # 0️⃣ UI-First: Try the right-side combobox input path (no navigation)
     input_el = _find_right_symbol_input(driver, debug=debug)
-    if input_el is not None and _verify_pair_input(input_el, dash, slash, debug=debug):
-        if debug:
-            print(f"   🔍 {dash} ist bereits aktiv (Combobox).")
-        return True
-
-    # 2️⃣ Use combobox-first selection: type and pick pair for this specific input
     if input_el is not None:
+        # Already selected?
+        if _verify_pair_input(input_el, dash, slash, debug=debug):
+            if debug:
+                print(f"   🔍 {dash} ist bereits aktiv (Combobox).")
+            return True
+        # Try to type and select
         ok = _open_and_type_pair(driver, input_el, dash, slash, debug=debug)
         if ok:
-            # verify via input value first; fall back to header check
             if _verify_pair_input(input_el, dash, slash, debug=debug) or _verify_pair_header(driver, dash, slash, debug=debug):
                 if debug:
                     print(f"   ✅ Pair {dash} gewählt (Combobox).")
                 return True
+
+    # 1️⃣ If the page is already on the correct pair per header/DOM, accept
+    try:
+        if _verify_pair_header(driver, dash, slash, debug=debug):
+            if debug:
+                print(f"   ✅ {dash} bereits aktiv (Header/DOM).")
+            return True
+    except Exception:
+        pass
+
+    # 2️⃣ Optional: Try URL-based navigation/verification (disabled by default)
+    allow_url_nav = (os.environ.get('FUSION_ALLOW_URL_NAV', '0') not in ('0', 'false', 'False', ''))
+    if allow_url_nav and _ensure_pair_by_url(driver, dash, debug=debug, timeout=timeout):
+        try:
+            if _verify_pair_header(driver, dash, slash, debug=debug):
+                if debug:
+                    print(f"   ✅ {dash} aktiv nach URL-Wechsel (Header/DOM).")
+                return True
+        except Exception:
+            pass
+        if debug:
+            print(f"   ✅ {dash} aktiv per URL-Check.")
+        return True
 
     # 3️⃣ Legacy fallback: open header selector, search, and click entry
     header_xpath = (
@@ -45,15 +68,52 @@ def fix_pair_selection_target(driver, pair_text, strategy="Limit", debug=False, 
         f"|//*[normalize-space()='{dash}' or normalize-space()='{slash}']"
     )
     try:
-        selector_btn = wait.until(EC.element_to_be_clickable((
-            By.XPATH,
-            "//div[contains(@class,'gWWQO') and normalize-space()!='']/ancestor::button[1]"
-        )))
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", selector_btn)
-        selector_btn.click()
+        # Try several robust selectors for the header market button
+        header_btn_xpaths = [
+            "//div[contains(@class,'gWWQO') and normalize-space()!='']/ancestor::button[1]",
+            "//button[contains(normalize-space(.),'/') or contains(normalize-space(.),'-')]",
+            "//*[@role='button' and (contains(normalize-space(.),'/') or contains(normalize-space(.),'-'))]",
+        ]
+        selector_btn = None
+        for xp in header_btn_xpaths:
+            try:
+                cand = wait.until(EC.presence_of_element_located((By.XPATH, xp)))
+            except TimeoutException:
+                cand = None
+            if not cand:
+                continue
+            try:
+                if cand.is_displayed():
+                    selector_btn = cand
+                    break
+            except Exception:
+                continue
+        if not selector_btn:
+            raise TimeoutException("header button not found")
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", selector_btn)
+        except Exception:
+            pass
+        try:
+            selector_btn.click()
+        except Exception:
+            driver.execute_script("arguments[0].click();", selector_btn)
     except TimeoutException:
         if debug:
             print("   ❌ Markt-Selector nicht gefunden.")
+        # As a fallback, if header already shows the desired pair, accept success
+        try:
+            if _verify_pair_header(driver, dash, slash, debug=debug):
+                if debug:
+                    print(f"   ✅ {dash} aktiv (Header Fallback).")
+                return True
+        except Exception:
+            pass
+        # Fallback 2: URL-based navigation (if allowed)
+        if allow_url_nav and _ensure_pair_by_url(driver, dash, debug=debug, timeout=timeout):
+            if debug:
+                print(f"   ✅ {dash} aktiv (URL Fallback).")
+            return True
         return False
 
     try:
@@ -160,14 +220,60 @@ def _visible_els(driver, xp: str):
     return out
 
 def _find_right_symbol_input(driver, debug=False):
-    # Prefer the right-most visible symbol selector input
+    # 1) Try to find the symbol input within the order form panel (closest to quantity input)
+    qty = None
+    try:
+        qty = driver.find_element(By.ID, 'OrderQty')
+    except Exception:
+        # try common placeholders in de/en
+        try:
+            qty = driver.find_element(By.XPATH, "//input[contains(@placeholder,'Anzahl') or contains(@placeholder,'Menge') or contains(@placeholder,'Quantity') or contains(@placeholder,'Qty')]")
+        except Exception:
+            qty = None
+    if qty is not None:
+        # ascend a few levels to scope the right panel
+        try:
+            panel = driver.execute_script(
+                "let el=arguments[0]; for(let i=0;i<6 && el && el.parentElement;i++){el=el.parentElement;} return el;",
+                qty,
+            )
+        except Exception:
+            panel = None
+        if panel is not None:
+            try:
+                # search inside panel
+                local = panel.find_elements(By.XPATH, ".//input[@data-testid='symbol-selector-input']")
+            except Exception:
+                local = []
+            for el in local:
+                try:
+                    if el.is_displayed():
+                        if debug:
+                            driver.execute_script("arguments[0].style.outline='2px solid #00bcd4'", el)
+                        return el
+                except Exception:
+                    continue
+            # if none visible, return last as fallback
+            if local:
+                return local[-1]
+
+    # 2) Fallback: right-most visible symbol selector input; then any matching input
     xp = "//input[@data-testid='symbol-selector-input' and @role='combobox']"
     cands = _visible_els(driver, xp)
     if not cands:
-        # try without role attr
         cands = _visible_els(driver, "//input[@data-testid='symbol-selector-input']")
     if not cands:
-        return None
+        try:
+            cands = driver.find_elements(By.XPATH, "//input[@data-testid='symbol-selector-input']")
+        except Exception:
+            cands = []
+        if debug and cands:
+            try:
+                driver.execute_script("arguments[0].style.outline='2px dashed #ff9800'", cands[-1])
+            except Exception:
+                pass
+        if not cands:
+            return None
     try:
         # compute right-most by boundingClientRect().x
         rects = driver.execute_script(
@@ -199,14 +305,21 @@ def _find_right_symbol_input(driver, debug=False):
 
 def _open_and_type_pair(driver, input_el, pair_dash: str, pair_slash: str, debug=False) -> bool:
     from selenium.webdriver.common.keys import Keys
+    # Try to focus/open via direct click; fallback to JS focus/click even if hidden
     try:
         input_el.click()
     except Exception:
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", input_el)
-            input_el.click()
         except Exception:
-            return False
+            pass
+        try:
+            driver.execute_script("arguments[0].click();", input_el)
+        except Exception:
+            try:
+                driver.execute_script("arguments[0].focus();", input_el)
+            except Exception:
+                return False
     # clear with Ctrl+A, Delete
     try:
         input_el.send_keys(Keys.CONTROL, 'a')
@@ -222,7 +335,10 @@ def _open_and_type_pair(driver, input_el, pair_dash: str, pair_slash: str, debug
     try:
         input_el.send_keys(Keys.ARROW_DOWN)
     except Exception:
-        pass
+        try:
+            driver.execute_script("arguments[0].dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))", input_el)
+        except Exception:
+            pass
     # pick from dropdown – scope to this input's menu via aria-controls when available
     menu_id = None
     try:
@@ -241,8 +357,20 @@ def _open_and_type_pair(driver, input_el, pair_dash: str, pair_slash: str, debug
         )
     try:
         opts = _visible_els(driver, options_xp)
+        if not opts:
+            # Try to locate within the menu even if not visible yet
+            try:
+                opts = driver.find_elements(By.XPATH, options_xp)
+            except Exception:
+                opts = []
         if opts:
-            opts[0].click()
+            try:
+                opts[0].click()
+            except Exception:
+                try:
+                    driver.execute_script("arguments[0].click();", opts[0])
+                except Exception:
+                    return False
             return True
     except Exception:
         pass
@@ -317,6 +445,51 @@ def _verify_pair_header(driver, dash: str, slash: str, debug=False) -> bool:
             return bool(dom_found)
         except Exception:
             return False
+    except Exception:
+        return False
+
+def _ensure_pair_by_url(driver, dash: str, debug=False, timeout: int = 10) -> bool:
+    """Ensure the Fusion trade URL targets the desired pair (e.g., https://web.bitpanda.com/fusion/trade/BTC-EUR).
+    Works even if the SPA header/selector isn't present. Returns True if URL contains the expected pair after waiting.
+    """
+    try:
+        want = dash.upper()
+        end = time.time() + max(2, int(timeout))
+        def url_has_pair() -> bool:
+            try:
+                cur = (driver.current_url or '').upper()
+                return want in cur
+            except Exception:
+                return False
+        if url_has_pair():
+            if debug:
+                print(f"   🔗 URL bereits korrekt: {driver.current_url}")
+            return True
+        # Try JS-based navigation first to cooperate with SPA routers
+        try:
+            target = f"https://web.bitpanda.com/fusion/trade/{want}"
+            driver.execute_script("window.location.href = arguments[0];", target)
+        except Exception:
+            try:
+                driver.get(f"https://web.bitpanda.com/fusion/trade/{want}")
+            except Exception:
+                pass
+        # Wait until URL contains the pair
+        while time.time() < end:
+            if url_has_pair():
+                # small settle delay for DOM
+                try:
+                    time.sleep(0.6)
+                except Exception:
+                    pass
+                return True
+            try:
+                time.sleep(0.2)
+            except Exception:
+                pass
+        if debug:
+            print(f"   ❌ URL enthält {want} nicht: {driver.current_url}")
+        return False
     except Exception:
         return False
 

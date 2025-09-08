@@ -549,45 +549,49 @@ def update_level_close_long(ext, df, trade_on="Close"):
     return ext
 
 def berechne_best_p_tw_long(df, cfg, start_idx, end_idx, verbose=False, ticker=None):
+    """Brute‑force Optimierung für Long-Parameter.
+
+    Zielfunktion (aktuell): Maximierung des Endkapitals (final_capital).
+    Frühere README-Angabe zur Sharpe-Ratio wurde korrigiert.
+    """
     optimierungsergebnisse = []
 
-    # Per-ticker constrained search ranges (default wide, XRP tighter)
+    # Parameterbereiche bestimmen
     if isinstance(ticker, str) and ('XRP' in ticker.upper()):
-        past_window_range = range(3, 11)   # 3-10
-        tw_range = range(2, 5)             # 2-4
+        past_window_range = range(3, 11)  # 3..10
+        tw_range = range(1, 5)            # 1..4
         if verbose:
-            print(f"🔧 Using constrained bounds for {ticker}: past_window=3..10, trade_window=2..4")
+            print(f"🔧 Using constrained bounds for {ticker}: past_window={past_window_range.start}..{past_window_range.stop-1}, trade_window={tw_range.start}..{tw_range.stop-1}")
     else:
-        past_window_range = range(2, 15)   # 2-14
-        tw_range = range(1, 8)             # 1-7
+        past_window_range = range(2, 15)  # 2..14
+        tw_range = range(1, 8)            # 1..7
+        if verbose:
+            print(f"🔧 Using default bounds: past_window={past_window_range.start}..{past_window_range.stop-1}, trade_window={tw_range.start}..{tw_range.stop-1}")
 
-    for past_window in past_window_range:  # Previously fixed range
-        for tw in tw_range:                # Previously fixed range
+    # Brute-force Schleife
+    for past_window in past_window_range:
+        for tw in tw_range:
             try:
                 df_opt = df.iloc[start_idx:end_idx].copy()
-                # Both past_window and tw are optimized here
                 support, resistance = calculate_support_resistance(df_opt, past_window, tw, verbose=False)
                 signal_df = assign_long_signals_extended(support, resistance, df_opt, tw, "1d")
-                # KORRIGIERT: Nicht update_level_close_long verwenden - das überschreibt mit NaN!
-                # signal_df = update_level_close_long(signal_df, df_opt)  # DEAKTIVIERT!
-
                 final_capital, _ = simulate_trades_compound_extended(
-                    signal_df, 
+                    signal_df,
                     cfg.get("initial_capital", 10000),
                     cfg.get("commission_rate", 0.001),
                     cfg.get("min_commission", 1.0),
                     cfg.get("order_round_factor", 1),
                     df_opt
                 )
-
                 optimierungsergebnisse.append({
                     "past_window": past_window,
-                    "trade_window": tw,  # Store tw as trade_window for compatibility
+                    "trade_window": tw,
                     "final_cap": final_capital
                 })
-            except Exception as e:
+            except Exception:
                 continue
 
+    # Ergebnis wählen
     if optimierungsergebnisse:
         df_result = pd.DataFrame(optimierungsergebnisse).sort_values("final_cap", ascending=False)
         best_row = df_result.iloc[0]

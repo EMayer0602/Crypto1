@@ -386,12 +386,159 @@ def trade_order(driver, order, timeout=20):
         print(f"[limit_price] No match for label '{label}' (candidates={sorted(candidates)})")
         return False
 
+    def _find_price_input():
+        # Try common identifiers/placeholders for price input
+        xpaths = [
+            "//*[@id='OrderPrice' or @name='OrderPrice']",
+            "//input[contains(@placeholder,'Limitpreis') or contains(@placeholder,'Preis') or contains(@placeholder,'Price')]",
+            "//*[@data-testid and contains(translate(@data-testid,'PRICE','price'),'price')]//input",
+            "//input[@type='text' or @inputmode='decimal']",
+        ]
+        for xp in xpaths:
+            try:
+                els = driver.find_elements(By.XPATH, xp)
+            except Exception:
+                els = []
+            for el in els:
+                try:
+                    if el and el.is_displayed() and el.is_enabled():
+                        return el
+                except Exception:
+                    continue
+        return None
+
+    def _parse_number(txt: str) -> float | None:
+        if not txt:
+            return None
+        t = (txt or "").strip()
+        # Remove currency and spaces
+        t = t.replace("€", "").replace("$", "").replace("£", "").replace("%", "")
+        t = t.replace("\xa0", " ")
+        t = t.replace(" ", "")
+        # Handle German vs English separators: if comma as decimal, dot as thousands
+        import re
+        # Extract last number-like token
+        m = re.findall(r"[-+]?\d{1,3}(?:[\.,]\d{3})*(?:[\.,]\d+)?|[-+]?\d+(?:[\.,]\d+)?", t)
+        if not m:
+            return None
+        cand = m[-1]
+        # If both separators occur, assume last separator is decimal
+        if "," in cand and "." in cand:
+            if cand.rfind(',') > cand.rfind('.'):
+                # 1.234,56 -> 1234.56
+                cand = cand.replace('.', '').replace(',', '.')
+            else:
+                # 1,234.56 -> 1234.56
+                cand = cand.replace(',', '')
+        else:
+            # If only comma, treat as decimal
+            if "," in cand and "." not in cand:
+                cand = cand.replace(',', '.')
+            # If only dot, already fine
+        try:
+            return float(cand)
+        except Exception:
+            return None
+
+    def _extract_price_by_labels() -> dict:
+        # Try to find Bid/Ask/Mid/Last prices in visible DOM
+        label_sets = {
+            'bid': ['gebot', 'geldkurs', 'bid'],
+            'ask': ['brief', 'briefkurs', 'ask', 'angebot'],
+            'mid': ['mittel', 'mittelkurs', 'mid'],
+            'last': ['letzter', 'last', 'preis', 'kurs'],
+        }
+        found = {}
+        # Broad scan for small panels near order form
+        panels = driver.find_elements(By.XPATH, "//*[self::div or self::section or self::aside or self::li]")
+        for el in panels[:800]:
+            try:
+                if not el.is_displayed():
+                    continue
+                txt = (el.text or '').strip()
+                if not txt:
+                    continue
+                low = txt.lower()
+                for key, labels in label_sets.items():
+                    for lab in labels:
+                        if lab in low:
+                            val = _parse_number(txt)
+                            if val:
+                                if key not in found:
+                                    found[key] = val
+                if len(found) >= 2:
+                    # good enough
+                    pass
+            except Exception:
+                continue
+        return found
+
+    def _apply_bps_to_ref(ref: float, bps_label: str, side: str) -> float | None:
+        # bps_label like '-25bps' or '+25bps'
+        s = (bps_label or '').strip().lower().replace(' ', '')
+        s = s.replace('−', '-').replace('–', '-')
+        if 'bps' not in s:
+            return None
+        try:
+            sign = -1.0 if s.startswith('-') else 1.0
+            num = ''.join(ch for ch in s if ch.isdigit())
+            bps = float(num)
+            return ref * (1.0 + sign * (bps / 10000.0))
+        except Exception:
+            return None
+
     strategy_norm = (strategy or "").strip().lower()
     if strategy_norm in ("limit", "stop-limit", "stop_limit") and limit_price:
+        lp_str = str(limit_price)
+        # First try built-in buttons (Bid/Ask/Mid) or BPS buttons
+        clicked = False
         try:
-            _click_limit_price(str(limit_price))
+            if 'bps' in lp_str.lower():
+                # Try to click BPS button if present
+                clicked = _click_limit_price(lp_str)
+            else:
+                clicked = _click_limit_price(lp_str)
         except Exception:
-            pass
+            clicked = False
+        # If not clicked, compute price from DOM and set input directly
+        if not clicked:
+            try:
+                ref_prices = _extract_price_by_labels()
+                # Determine reference: use ask for buys with negative bps; bid for sells with positive bps; else mid/last
+                ref = None
+                if 'bps' in lp_str.lower():
+                    if action == 'buy':
+                        ref = ref_prices.get('ask') or ref_prices.get('mid') or ref_prices.get('last')
+                    else:
+                        ref = ref_prices.get('bid') or ref_prices.get('mid') or ref_prices.get('last')
+                    price_val = _apply_bps_to_ref(ref, lp_str, action)
+                else:
+                    # If label was e.g. 'bid' or 'ask'
+                    key = _norm_txt(lp_str)
+                    ref_map = {
+                        'bid': ref_prices.get('bid'),
+                        'ask': ref_prices.get('ask'),
+                        'mid': ref_prices.get('mid'),
+                        'mittel': ref_prices.get('mid'),
+                        'mittelkurs': ref_prices.get('mid'),
+                    }
+                    price_val = ref_map.get(key) or ref_prices.get('last')
+                if price_val:
+                    # Round sensibly to 6 decimals; platform will adjust as needed
+                    price_text = f"{price_val:.6f}"
+                    inp = _find_price_input()
+                    if inp:
+                        try:
+                            inp.clear()
+                        except Exception:
+                            pass
+                        try:
+                            inp.send_keys(price_text)
+                            print(f"[price] Set limit price {price_text} (ref={ref_prices})")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
     # 5) Wenn Market gewünscht, JETZT auf Market(+) umschalten (nachdem Menge/Max gesetzt wurde)
     if (strategy or "").lower() == "market":

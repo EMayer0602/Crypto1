@@ -7,14 +7,22 @@ import builtins
 print = builtins.print
 from builtins import AttributeError
 import pandas as pd
-import pandas_market_calendars as mcal
-# Handelskalender initialisieren (z.B. NYSE)
-nyse = mcal.get_calendar("NYSE")
+try:
+    import pandas_market_calendars as mcal
+    # Handelskalender initialisieren (z.B. NYSE)
+    nyse = mcal.get_calendar("NYSE")
+except ImportError:
+    mcal = None
+    nyse = None
+    print("⚠️ pandas_market_calendars nicht installiert – Kalenderfunktionen deaktiviert. Installieren mit: pip install pandas-market-calendars")
 import numpy as np
 from scipy.signal import argrelextrema
 from scipy import stats
-#from stats import stats
-import mplfinance as mpf
+try:
+    import mplfinance as mpf
+except ImportError:
+    mpf = None
+    print("⚠️ mplfinance nicht installiert – Candle/Chart Rendering deaktiviert. Installieren mit: pip install mplfinance")
 from ib_insync import IB, Stock, LimitOrder, Crypto
 import time
 import logging
@@ -23,7 +31,7 @@ import datetime
 from zoneinfo import ZoneInfo
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
-import pandas_market_calendars as mcal  # Am Anfang des Skripts einfügen
+# (Duplizierter Import von pandas_market_calendars entfernt – wird oben behandelt)
 from ib_insync import MarketOrder
 import yfinance as yf
 import threading
@@ -31,13 +39,14 @@ price_event = threading.Event()
 shared_price = {"price": None, "bid": None, "ask": None}
 import plotly.io as pio
 pio.renderers.default = "browser"
-# Globale Parameter
+# Globale Parameter / Defaults
 ORDER_ROUND_FACTOR = 1
 COMMISSION_RATE = 0.0018  # 0,18% des Umsatzes
 MIN_COMMISSION = 1.0      # Mindestprovision
 ORDER_SIZE = 100          # Standard-Ordergröße
 backtesting_begin = 0      # z.B. 0 für Start bei 0%
 backtesting_end = 75       # z.B. 50 für Ende bei 50%
+DEFAULT_INTERVALS = ["5 mins", "15 mins", "30 mins", "1 hour"]
 # Ticker-Konfiguration (ganz oben, außerhalb aller Funktionen!)
 tickers = {
     "BTC":  {"symbol": "BTC",  "exchange": "PAXOS",    "long": True,  "short": False, "initialCapitalLong": 5000, "initialCapitalShort": 0,    "order_round_factor": 0.01},
@@ -700,7 +709,7 @@ def plot_optimal_trades_multi(ticker, ib):
     # ----------------------------
     short_results = []
     for p in range(3, 10):
-        for tw in range(1, 4):
+        for tw in range(1, 6):
             supp_temp, res_temp = calculate_support_resistance(df, p, tw)
             sig = assign_short_signals(supp_temp, res_temp, df, tw, "1d")
             cap, _ = simulate_short_trades_compound(
@@ -1151,18 +1160,18 @@ def show_all_equity_curves_and_stats():
 
 # Am Ende von both_backtesting_multi(ib) oder als eigenen Modus aufrufen:
 # show_all_equity_curves_and_stats()
-def get_today_minute_data(ib, contract):
-    """
-    Holt die Minutendaten für den aktuellen Tag von IB.
-    Gibt ein DataFrame mit Spalten open, high, low, close, volume zurück.
+def get_today_minute_data(ib, symbol, exchange, currency="USD"):
+    """Holt Minutendaten für den aktuellen Tag.
+
+    Vorheriger Bug: verwendete undefiniertes 'config'. Jetzt werden symbol/exchange Parameter genutzt.
     """
     now = datetime.datetime.now(ZoneInfo("America/New_York"))
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end_time = now.replace(hour=15, minute=45, second=0, microsecond=0)
-    # Beide tz-naiv machen:
+    # tz-naiv machen
     today = today.replace(tzinfo=None)
     end_time = end_time.replace(tzinfo=None)
-    contract = Crypto(config["symbol"], config["exchange"], "USD")
+    contract = Crypto(symbol, exchange, currency)
     whatToShow = "AGGTRADES"
 
     bars = ib.reqHistoricalData(
@@ -1522,7 +1531,7 @@ def download_ib_minute_data(ib, symbol, exchange, currency, date, end_time="15:4
     durationStr = f"{duration_seconds} S"
 
     print(f"Lade {n_bars} Minutendaten für {symbol} bis {end_time} am {date_str} ...")
-    contract = Crypto(config["symbol"], config["exchange"], "USD")
+    # Entfernt: falscher Zugriff auf undefined 'config'. Verwende vorhandenen contract.
     whatToShow = "AGGTRADES"
 
     bars = ib.reqHistoricalData(
@@ -1758,7 +1767,7 @@ def berechne_best_p_tw_short(df, config, backtesting_begin=0, backtesting_end=50
           f"({len(df_opt)} Zeilen, {backtesting_begin}% bis {backtesting_end}% der Daten)")
     short_results = []
     for p in range(3, 10):
-        for tw in range(1, 4):
+        for tw in range(1, 6):
             supp_temp, res_temp = calculate_support_resistance(df_opt, p, tw)
             sig = assign_short_signals(supp_temp, res_temp, df_opt, tw, "1d")
             cap, _ = simulate_short_trades_compound(
@@ -1802,13 +1811,13 @@ if __name__ == "__main__":
         trading_multi(ib)
        # wait_and_trade_at_1540(ib)
     elif mode == "daytrading":
-        #intervals = sys.argv[2:] if len(sys.argv) > 2 else ["5 mins", "15 mins", "30 mins", "1 hour"]
+        intervals = sys.argv[2:] if len(sys.argv) > 2 else DEFAULT_INTERVALS
         daytrading_multi(ib, intervals=intervals)
         print("Daytrading abgeschlossen. Verbindung bleibt bestehen. Beenden mit STRG+C.")
         while True:
             time.sleep(60)
     elif mode == "live":
-        intervals = sys.argv[2:] if len(sys.argv) > 2 else ["5 mins", "15 mins", "30 mins", "1 hour"]
+        intervals = sys.argv[2:] if len(sys.argv) > 2 else DEFAULT_INTERVALS
         live_trading_loop(ib, intervals=intervals)
         # KEIN ib.disconnect() hier!
     else:

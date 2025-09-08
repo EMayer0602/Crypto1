@@ -15,5 +15,5 @@ backtest_years = 1      # 1 Jahr
 
 # 🧪 Backtest-Bereich (in Prozent der Daten)
 backtesting_begin = 25     # Beginne bei z. B. 25 % der Daten
-backtesting_end = 95       # Ende bei z. B. 98 % der Daten
+backtesting_end = 90       # Ende bei z. B. 98 % der Daten
 

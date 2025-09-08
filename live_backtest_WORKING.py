@@ -355,7 +355,14 @@ if __name__ == "__main__":
     else:
         # Default: orchestrated single-run workflow
         ok = orchestrate_single_run(skip_fusion=args.skip_fusion, force_fusion=args.force_fusion)
-        if not ok:
+        if ok:
+            # Auto-generate live backtest charts/report
+            try:
+                print("\n📈 Generating live backtest analysis (charts)...")
+                run_live_backtest_analysis()
+            except Exception as e:
+                print(f"⚠️ Live backtest analysis failed: {e}")
+        else:
             print("\n⚠️ Orchestration issues encountered. Running legacy analysis as fallback…")
             ok = legacy_analysis_run(force_fusion=args.force_fusion)
         sys.exit(0 if ok else 1)
