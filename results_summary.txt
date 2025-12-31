@@ -1,0 +1,188 @@
+======================================================================
+FINAL CAPITAL FOR ALL CRYPTOCURRENCY VERSIONS
+======================================================================
+
+======================================================================
+Processing BTC-EUR...
+======================================================================
+
+=== Backtest fuer BTC-EUR ===
+Initial Capital: 5000
+Trade on: Close price
+Order Round Factor: 0.001
+Commission Rate: 0.18%
+DEBUG: initial_capital = 5000 (from config key 'initialCapitalLong')
+Backtest Zeitraum: 1 Jahr(e) (aus config.py)
+CSV BTC-EUR_daily.csv not found. Downloading from yfinance…
+❌ Error loading data for BTC-EUR: 'tuple' object has no attribute 'strip'
+Traceback (most recent call last):
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in load_crypto_data_yf
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in <dictcomp>
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                          ^^^^^^^
+AttributeError: 'tuple' object has no attribute 'strip'
+Keine Daten für BTC-EUR
+  ERROR: No result returned for BTC-EUR
+
+======================================================================
+Processing ETH-EUR...
+======================================================================
+
+=== Backtest fuer ETH-EUR ===
+Initial Capital: 3000
+Trade on: Close price
+Order Round Factor: 0.01
+Commission Rate: 0.18%
+DEBUG: initial_capital = 3000 (from config key 'initialCapitalLong')
+Backtest Zeitraum: 1 Jahr(e) (aus config.py)
+CSV ETH-EUR_daily.csv not found. Downloading from yfinance…
+❌ Error loading data for ETH-EUR: 'tuple' object has no attribute 'strip'
+Traceback (most recent call last):
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in load_crypto_data_yf
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in <dictcomp>
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                          ^^^^^^^
+AttributeError: 'tuple' object has no attribute 'strip'
+Keine Daten für ETH-EUR
+  ERROR: No result returned for ETH-EUR
+
+======================================================================
+Processing DOGE-EUR...
+======================================================================
+
+=== Backtest fuer DOGE-EUR ===
+Initial Capital: 3500
+Trade on: Close price
+Order Round Factor: 10.0
+Commission Rate: 0.18%
+DEBUG: initial_capital = 3500 (from config key 'initialCapitalLong')
+Backtest Zeitraum: 1 Jahr(e) (aus config.py)
+CSV DOGE-EUR_daily.csv not found. Downloading from yfinance…
+❌ Error loading data for DOGE-EUR: 'tuple' object has no attribute 'strip'
+Traceback (most recent call last):
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in load_crypto_data_yf
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in <dictcomp>
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                          ^^^^^^^
+AttributeError: 'tuple' object has no attribute 'strip'
+Keine Daten für DOGE-EUR
+  ERROR: No result returned for DOGE-EUR
+
+======================================================================
+Processing SOL-EUR...
+======================================================================
+
+=== Backtest fuer SOL-EUR ===
+Initial Capital: 2000
+Trade on: Close price
+Order Round Factor: 0.1
+Commission Rate: 0.18%
+DEBUG: initial_capital = 2000 (from config key 'initialCapitalLong')
+Backtest Zeitraum: 1 Jahr(e) (aus config.py)
+CSV SOL-EUR_daily.csv not found. Downloading from yfinance…
+❌ Error loading data for SOL-EUR: 'tuple' object has no attribute 'strip'
+Traceback (most recent call last):
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in load_crypto_data_yf
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in <dictcomp>
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                          ^^^^^^^
+AttributeError: 'tuple' object has no attribute 'strip'
+Keine Daten für SOL-EUR
+  ERROR: No result returned for SOL-EUR
+
+======================================================================
+Processing LINK-EUR...
+======================================================================
+
+=== Backtest fuer LINK-EUR ===
+Initial Capital: 1500
+Trade on: Close price
+Order Round Factor: 1.0
+Commission Rate: 0.18%
+DEBUG: initial_capital = 1500 (from config key 'initialCapitalLong')
+Backtest Zeitraum: 1 Jahr(e) (aus config.py)
+CSV LINK-EUR_daily.csv not found. Downloading from yfinance…
+❌ Error loading data for LINK-EUR: 'tuple' object has no attribute 'strip'
+Traceback (most recent call last):
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in load_crypto_data_yf
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in <dictcomp>
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                          ^^^^^^^
+AttributeError: 'tuple' object has no attribute 'strip'
+Keine Daten für LINK-EUR
+  ERROR: No result returned for LINK-EUR
+
+======================================================================
+Processing XRP-EUR...
+======================================================================
+
+=== Backtest fuer XRP-EUR ===
+Initial Capital: 1000
+Trade on: Close price
+Order Round Factor: 10.0
+Commission Rate: 0.18%
+DEBUG: initial_capital = 1000 (from config key 'initialCapitalLong')
+Backtest Zeitraum: 1 Jahr(e) (aus config.py)
+CSV XRP-EUR_daily.csv not found. Downloading from yfinance…
+❌ Error loading data for XRP-EUR: 'tuple' object has no attribute 'strip'
+Traceback (most recent call last):
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in load_crypto_data_yf
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in <dictcomp>
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                          ^^^^^^^
+AttributeError: 'tuple' object has no attribute 'strip'
+Keine Daten für XRP-EUR
+  ERROR: No result returned for XRP-EUR
+
+======================================================================
+Processing XLM-EUR...
+======================================================================
+
+=== Backtest fuer XLM-EUR ===
+Initial Capital: 1000
+Trade on: Close price
+Order Round Factor: 100.0
+Commission Rate: 0.18%
+DEBUG: initial_capital = 1000 (from config key 'initialCapitalLong')
+Backtest Zeitraum: 1 Jahr(e) (aus config.py)
+CSV XLM-EUR_daily.csv not found. Downloading from yfinance…
+❌ Error loading data for XLM-EUR: 'tuple' object has no attribute 'strip'
+Traceback (most recent call last):
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in load_crypto_data_yf
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/Crypto1/crypto_backtesting_module.py", line 69, in <dictcomp>
+    df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+                          ^^^^^^^
+AttributeError: 'tuple' object has no attribute 'strip'
+Keine Daten für XLM-EUR
+  ERROR: No result returned for XLM-EUR
+
+
+======================================================================
+SUMMARY - ALL CRYPTOCURRENCIES
+======================================================================
+Ticker            Initial        Final       Profit     Return
+----------------------------------------------------------------------
+BTC-EUR      €  5,000.00 €      0.00 €      0.00     0.00%
+ETH-EUR      €  3,000.00 €      0.00 €      0.00     0.00%
+DOGE-EUR     €  3,500.00 €      0.00 €      0.00     0.00%
+SOL-EUR      €  2,000.00 €      0.00 €      0.00     0.00%
+LINK-EUR     €  1,500.00 €      0.00 €      0.00     0.00%
+XRP-EUR      €  1,000.00 €      0.00 €      0.00     0.00%
+XLM-EUR      €  1,000.00 €      0.00 €      0.00     0.00%
+----------------------------------------------------------------------
+TOTAL        €      0.00 €      0.00 €      0.00     0.00%
+======================================================================

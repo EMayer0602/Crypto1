@@ -106,4 +106,5 @@ reports/*.csv
 # (No CSV exceptions)
 
 # But exclude secret configs (already above)
-config.secret.py
+config.secret.pymultitasking-0.0.12/
+multitasking-0.0.12.tar.gz
