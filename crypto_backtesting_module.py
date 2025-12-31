@@ -66,7 +66,14 @@ def load_crypto_data_yf(symbol, backtest_years=1, max_retries=3):
                 print(f"❌ No data downloaded for {symbol}")
                 return None
             df.reset_index(inplace=True)
-            df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+
+            # Handle multi-index columns from yfinance (tuples)
+            if isinstance(df.columns[0], tuple):
+                # Flatten multi-index columns to simple strings
+                df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+
+            # Strip whitespace from column names
+            df.rename(columns={c: c.strip() if isinstance(c, str) else str(c) for c in df.columns}, inplace=True)
             df.to_csv(csv_path, index=False)
             print(f"Saved fresh data to {csv_filename}")
 
