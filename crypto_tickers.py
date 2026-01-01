@@ -1,5 +1,4 @@
-from websockets import Close
-
+# Crypto Trading Ticker Configuration
 
 crypto_tickers = {
     "BTC-EUR":  {"symbol": "BTC-EUR",  "conID": None, "long": True, "short": False, "initialCapitalLong": 5000, "initialCapitalShort": 0, "order_round_factor": 0.001, "trade_on": "Close"},

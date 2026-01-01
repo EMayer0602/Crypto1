@@ -63,10 +63,14 @@ def load_crypto_data_yf(symbol, backtest_years=1, max_retries=3):
             start_date = end_date - timedelta(days=int(backtest_years*365)+5)
             df = yf.download(symbol, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), interval='1d', auto_adjust=True, progress=False)
             if df is None or df.empty:
-                print(f"❌ No data downloaded for {symbol}")
+                print(f"No data downloaded for {symbol}")
                 return None
+            # Handle MultiIndex columns from newer yfinance versions
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
             df.reset_index(inplace=True)
-            df.rename(columns={c: c.strip() for c in df.columns}, inplace=True)
+            # Safe column rename - handle both string and tuple columns
+            df.columns = [str(c).strip() if hasattr(c, 'strip') else str(c) for c in df.columns]
             df.to_csv(csv_path, index=False)
             print(f"Saved fresh data to {csv_filename}")
 
